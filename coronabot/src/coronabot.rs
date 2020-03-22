@@ -23,6 +23,15 @@ impl Coronabot {
                 let query = &text[q_string+1..text.len()];
                 println!("Got query: {:?}", query);
                 // TODO: Design UI/respond to queries
+
+                let current_data = self.us_daily.read().unwrap();
+                match &*current_data {
+                    Some(data) => {
+                        let to_send = serde_json::to_string(&data).unwrap();
+                        cli.sender().send_message(&channel, &to_send);
+                    },
+                    _ => {}
+                }
             },
             None => {
             }
