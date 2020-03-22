@@ -4,10 +4,21 @@ extern crate slack;
 
 use slack::RtmClient;
 use crate::coronabot::Coronabot;
+use chrono::{DateTime, Utc, FixedOffset};
 
 const USDAILY_URL: &str = "https://covidtracking.com/api/us/daily";
 
 fn main() {
+    let mut date = DateTime::parse_from_str("2020", "%Y");
+    match date {
+        Ok(data) => {
+            println!("Success");
+        },
+        Err(err) => {
+            println!("Failure: {:?}", err);
+        }
+    }
+
     println!("Starting Coronabot");
     let args: Vec<String> = std::env::args().collect();
     let api_key = args[1].clone();
