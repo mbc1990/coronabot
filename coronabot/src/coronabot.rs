@@ -56,19 +56,42 @@ impl Coronabot {
             None => {}
         }
 
+        let mut pos_change = 0;
+        let mut neg_change = 0;
+        let mut hosp_change = 0;
+        let mut tested_change = 0;
+        let mut dead_change :i32 = 0;
+
+        let yesterday_el = data.get(data.len() - 2);
+        match yesterday_el {
+            Some(el) => {
+                pos_change = (((total_positive - el.positive.unwrap_or(0)) as f64 / el.positive.unwrap_or(0) as f64) * 100.0) as i32;
+                neg_change = (((total_negative - el.negative.unwrap_or(0)) as f64 / el.negative.unwrap_or(0) as f64) * 100.0) as i32;
+                hosp_change = (((total_hospitalized- el.hospitalized.unwrap_or(0)) as f64 / el.hospitalized.unwrap_or(0) as f64) * 100.0) as i32;
+                tested_change = (((total_tested - el.posNeg.unwrap_or(0)) as f64 / el.posNeg.unwrap_or(0) as f64) * 100.0) as i32;
+                dead_change = (((total_dead - el.death.unwrap_or(0)) as f64 / el.death.unwrap_or(0) as f64) * 100.0) as i32;
+            },
+            None => {}
+        }
+
         return format!("
-        U.S. Overall stats ({date})\n \
-        Total positive: {total_positive}\n \
-        Total negative: {total_negative}\n \
-        Total tested: {total_tested}\n \
-        Total hospitalized: {total_hospitalized}\n \
-        Total deaths: {total_dead}",
+        U.S. Overall Daily Stats ({date})\n \
+        Total positive: {total_positive} (+{pos_change}%)\n \
+        Total negative: {total_negative} (+{neg_change}%)\n \
+        Total tested: {total_tested} (+{tested_change}%)\n \
+        Total hospitalized: {total_hospitalized} (+{hosp_change}%)\n \
+        Total deaths: {total_dead} (+{dead_change}%)",
                        date=date,
                        total_positive=total_positive.to_formatted_string(&Locale::en),
+                       pos_change=pos_change,
                        total_negative=total_negative.to_formatted_string(&Locale::en),
+                       neg_change=neg_change,
                        total_hospitalized=total_hospitalized.to_formatted_string(&Locale::en),
+                       hosp_change=hosp_change,
                        total_tested=total_tested.to_formatted_string(&Locale::en),
-                       total_dead=total_dead.to_formatted_string(&Locale::en));
+                       tested_change=tested_change,
+                       total_dead=total_dead.to_formatted_string(&Locale::en),
+                       dead_change=dead_change);
     }
 
     fn handle_mention(&self, text: String, channel: String, cli: &RtmClient) {
@@ -79,15 +102,21 @@ impl Coronabot {
                 println!("Got query: {:?}", query);
 
                 if query == "latest" {
+                    println!("Getting current data");
                     let current_data = self.us_daily.read().unwrap();
+                    println!("Got data");
                     match &*current_data {
                         Some(data) => {
 
                             // let to_send = serde_json::to_string(&data).unwrap();
+                            println!("Getting data");
                             let to_send = self.format_latest(data);
+                            println!("Sending data");
                             cli.sender().send_message(&channel, &to_send);
                         },
-                        _ => {}
+                        _ => {
+                            println!("Don't have any data to share.");
+                        }
                     }
                 } else if query == "help" {
                     let to_send = "Usage: @Coronabot <help|latest>";
@@ -103,18 +132,17 @@ impl Coronabot {
         let my_us_daily = self.us_daily.clone();
         thread::spawn(move || {
             loop {
+                println!("Making data query...");
                 let body = reqwest::blocking::get(USDAILY_URL)
                     .unwrap()
                     .text()
                     .unwrap();
+                println!("...Done");
                 let parsed: Vec<USDailyStats> = serde_json::from_str(&body).unwrap();
                 let mut data = my_us_daily.write().unwrap();
                 *data = Some(parsed);
-                // println!("my us daily: {:?}", my_us_daily);
-
-                // Check for updates once an hour
-                // thread::sleep(Duration::from_millis(1000 * 60 * 60));
-                thread::sleep(Duration::from_millis(5000 ));
+                drop(data);
+                thread::sleep(Duration::from_millis(1000 * 60 * 60));
             }
         });
     }
