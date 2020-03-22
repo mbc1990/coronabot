@@ -1,9 +1,11 @@
 mod coronabot;
+extern crate reqwest;
 extern crate slack;
 
 use slack::RtmClient;
 use crate::coronabot::Coronabot;
 
+const USDAILY_URL: &str = "https://covidtracking.com/api/us/daily";
 
 fn main() {
     println!("Starting Coronabot");
@@ -13,6 +15,10 @@ fn main() {
     println!("API key: {:?}", api_key);
     println!("Bot id: {:?}", bot_id);
     let mut handler = Coronabot::new(bot_id);
+
+    // TODO: Should be called in thread
+    handler.update_data();
+
     let r = RtmClient::login_and_run(&api_key, &mut handler);
     match r {
         Ok(_) => {}
