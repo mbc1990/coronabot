@@ -80,7 +80,7 @@ impl Coronabot {
         Total negative: {total_negative} (+{neg_change}%)\n \
         Total tested: {total_tested} (+{tested_change}%)\n \
         Total hospitalized: {total_hospitalized} (+{hosp_change}%)\n \
-        Total deaths: {total_dead} (+{dead_change}%)",
+        Souls lost: {total_dead} (+{dead_change}%)",
                        date=date,
                        total_positive=total_positive.to_formatted_string(&Locale::en),
                        pos_change=pos_change,
