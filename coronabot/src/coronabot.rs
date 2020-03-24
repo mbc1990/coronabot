@@ -66,6 +66,7 @@ impl Coronabot {
         return Coronabot{bot_id: bot_id, us_daily: Arc::new(RwLock::new(None)), states_daily: Arc::new(RwLock::new(None))};
     }
 
+    // TODO: This and the overall function can be refactored, they share most of the same logic
     fn format_state_latest(&self, data: &HashMap<String,Vec<StateDailyStats>>, state: &str) -> String {
 
         if !data.contains_key(state) {
@@ -233,7 +234,7 @@ impl Coronabot {
                         }
                     }
                 } else if query == "help" {
-                    let to_send = "Usage: @Coronabot <help|latest>";
+                    let to_send = "Usage: @Coronabot <help|latest|<2 letter state abbreviation>>";
                     cli.sender().send_message(&channel, &to_send);
                 } else {
                     let state_stats = self.states_daily.read().unwrap();
