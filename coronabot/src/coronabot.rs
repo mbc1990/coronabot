@@ -1,4 +1,4 @@
-use crate::USDAILY_URL;
+use crate::{USDAILY_URL, STATESDAILY_URL};
 use slack::{Event, RtmClient, Message};
 use serde_json::Value;
 use serde::{Deserialize, Serialize};
@@ -8,6 +8,7 @@ use std::sync::{Arc, RwLock};
 use num_format::{Locale, ToFormattedString};
 use chrono::{DateTime, Utc, FixedOffset, NaiveDate};
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct USDailyStats {
@@ -25,7 +26,7 @@ struct USDailyStats {
 /*
 {"date":20200323,"state":"WA","positive":1996,"negative":28879,"pending":null,"hospitalized":null,"death":95,"total":30875,"dateChecked":"2020-03-23T20:00:00Z"}
 */
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct StateDailyStats {
     date: Option<u32>,
     state: Option<String>,
@@ -46,7 +47,6 @@ pub struct Coronabot {
 
 impl Coronabot {
     pub fn new(bot_id: String) -> Coronabot {
-        // TODO: Start worker thread to download statistics
         return Coronabot{bot_id: bot_id, us_daily: Arc::new(RwLock::new(None)), states_daily: Arc::new(RwLock::new(None))};
     }
 
@@ -195,20 +195,56 @@ impl Coronabot {
         }
     }
 
-    pub fn update_data(&mut self) {
+    fn construct_states_map(&self, data: &Vec<StateDailyStats>) -> HashMap<String, Vec<StateDailyStats>> {
+        let mut ret = HashMap::new();
+        for dp in data.iter() {
+            let state = dp.state.clone().unwrap_or("N/A".to_string());
+            match ret.entry(state) {
+                Entry::Vacant(e) => {
+                    e.insert(vec![dp.clone()]);
+                },
+                Entry::Occupied(mut e) => {
+                    e.get_mut().push(dp.clone());
+                }
+            }
+        }
+        return ret;
+    }
+
+    pub fn start_bg_update(&mut self) {
         let my_us_daily = self.us_daily.clone();
+        // let my_states_daily = self.states_daily.clone();
         thread::spawn(move || {
             loop {
-                println!("Making data query...");
+                println!("Making US daily query...");
                 let body = reqwest::blocking::get(USDAILY_URL)
                     .unwrap()
                     .text()
                     .unwrap();
-                println!("...Done");
                 let parsed: Vec<USDailyStats> = serde_json::from_str(&body).unwrap();
-                let mut data = my_us_daily.write().unwrap();
+                let mut data = my_us_daily
+                    .write()
+                    .unwrap();
                 *data = Some(parsed);
+
+                // We have to manually drop this to release the RwLock since we sleep in the same closure
                 drop(data);
+                /*
+                println!("Making states daily query...");
+                let body = reqwest::blocking::get(STATESDAILY_URL)
+                    .unwrap()
+                    .text()
+                    .unwrap();
+                let parsed: Vec<StateDailyStats> = serde_json::from_str(&body).unwrap();
+                let states_map = self.construct_states_map(&parsed);
+                let mut data = my_states_daily
+                    .write()
+                    .unwrap();
+                *data = Some(states_map);
+                drop(data);
+                */
+
+                // Rerun once an hour
                 thread::sleep(Duration::from_millis(1000 * 60 * 60));
             }
         });
