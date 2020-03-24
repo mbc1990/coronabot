@@ -16,7 +16,6 @@ fn main() {
     let bot_id = args[2].clone();
     println!("API key: {:?}", api_key);
     println!("Bot id: {:?}", bot_id);
-
     let mut handler = Coronabot::new(bot_id);
     handler.start_bg_update();
 

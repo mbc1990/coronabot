@@ -32,7 +32,7 @@ struct StateDailyStats {
     state: Option<String>,
     positive: Option<u32>,
     negative: Option<u32>,
-    pending: Option<u32>,
+    pending: Option<i32>,
     hospitalized: Option<u32>,
     death: Option<u32>,
     total: Option<u32>,
@@ -44,6 +44,22 @@ pub struct Coronabot {
     us_daily: Arc<RwLock<Option<Vec<USDailyStats>>>>,
     states_daily: Arc<RwLock<Option<HashMap<String, Vec<StateDailyStats>>>>>
 }
+fn construct_states_map(data: &Vec<StateDailyStats>) -> HashMap<String, Vec<StateDailyStats>> {
+    let mut ret = HashMap::new();
+    for dp in data.iter() {
+        let state = dp.state.clone().unwrap_or("N/A".to_string());
+        match ret.entry(state) {
+            Entry::Vacant(e) => {
+                e.insert(vec![dp.clone()]);
+            },
+            Entry::Occupied(mut e) => {
+                e.get_mut().push(dp.clone());
+            }
+        }
+    }
+    return ret;
+}
+
 
 impl Coronabot {
     pub fn new(bot_id: String) -> Coronabot {
@@ -154,7 +170,6 @@ impl Coronabot {
                 let query = &text[q_string+1..text.len()];
                 println!("Got query: {:?}", query);
 
-
                 if query == "latest" {
                     println!("Getting current data");
                     let current_data = self.us_daily.read().unwrap();
@@ -195,25 +210,9 @@ impl Coronabot {
         }
     }
 
-    fn construct_states_map(&self, data: &Vec<StateDailyStats>) -> HashMap<String, Vec<StateDailyStats>> {
-        let mut ret = HashMap::new();
-        for dp in data.iter() {
-            let state = dp.state.clone().unwrap_or("N/A".to_string());
-            match ret.entry(state) {
-                Entry::Vacant(e) => {
-                    e.insert(vec![dp.clone()]);
-                },
-                Entry::Occupied(mut e) => {
-                    e.get_mut().push(dp.clone());
-                }
-            }
-        }
-        return ret;
-    }
-
-    pub fn start_bg_update(&mut self) {
+    pub fn start_bg_update(&self) {
         let my_us_daily = self.us_daily.clone();
-        // let my_states_daily = self.states_daily.clone();
+        let my_states_daily = self.states_daily.clone();
         thread::spawn(move || {
             loop {
                 println!("Making US daily query...");
@@ -229,20 +228,19 @@ impl Coronabot {
 
                 // We have to manually drop this to release the RwLock since we sleep in the same closure
                 drop(data);
-                /*
+
                 println!("Making states daily query...");
                 let body = reqwest::blocking::get(STATESDAILY_URL)
                     .unwrap()
                     .text()
                     .unwrap();
                 let parsed: Vec<StateDailyStats> = serde_json::from_str(&body).unwrap();
-                let states_map = self.construct_states_map(&parsed);
-                let mut data = my_states_daily
+                let states_map = construct_states_map(&parsed);
+                let mut states_data = my_states_daily
                     .write()
                     .unwrap();
-                *data = Some(states_map);
-                drop(data);
-                */
+                *states_data = Some(states_map);
+                drop(states_data);
 
                 // Rerun once an hour
                 thread::sleep(Duration::from_millis(1000 * 60 * 60));
