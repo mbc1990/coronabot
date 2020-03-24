@@ -41,8 +41,8 @@ impl Coronabot {
         let mut total_dead = 0;
         let mut date = NaiveDate::parse_from_str("20200301", "%Y%m%d").unwrap();
 
-        let last_el = data.last();
-        match last_el {
+        let first_el = data.first();
+        match first_el {
             Some(el) => {
                 println!("El: {:?}", el);
                 let datestring = el.date.unwrap_or(0).to_string();
@@ -62,7 +62,7 @@ impl Coronabot {
         let mut tested_change = 0;
         let mut dead_change :i32 = 0;
 
-        let yesterday_el = data.get(data.len() - 2);
+        let yesterday_el = data.get(1);
         match yesterday_el {
             Some(el) => {
                 pos_change = (((total_positive - el.positive.unwrap_or(0)) as f64 / el.positive.unwrap_or(0) as f64) * 100.0) as i32;
