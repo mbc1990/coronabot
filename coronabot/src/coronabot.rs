@@ -114,87 +114,6 @@ impl Coronabot {
 
     }
 
-    // TODO: This and the overall function can be refactored, they share most of the same logic
-    fn format_state_latest(&self, data: &HashMap<String,Vec<DailyStats>>, state: &str) -> String {
-
-        if !data.contains_key(state) {
-            return format!("State data is present but does not contain stats for {state}", state=state);
-        }
-
-        let state_data = data.get(state).unwrap();
-
-        let mut total_positive = 0;
-        let mut total_negative = 0;
-        let mut total_hospitalized = 0;
-        let mut total_tested = 0;
-        let mut total_dead = 0;
-        let mut date = NaiveDate::parse_from_str("20200301", "%Y%m%d").unwrap();
-        let mut pos_change = 0;
-        let mut neg_change = 0;
-        let mut hosp_change = 0;
-        let mut tested_change = 0;
-        let mut dead_change :i32 = 0;
-
-        let first_el = state_data.first();
-        match first_el {
-            Some(el) => {
-                println!("El: {:?}", el);
-                let datestring = el.date.unwrap_or(0).to_string();
-                date = NaiveDate::parse_from_str(&datestring, "%Y%m%d").unwrap();
-                total_positive = el.positive.unwrap_or(0);
-                total_negative = el.negative.unwrap_or(0);
-                total_hospitalized = el.hospitalized.unwrap_or(0);
-                total_tested = total_positive + total_negative;
-                total_dead = el.death.unwrap_or(0);
-            },
-            None => {}
-        }
-
-        let mut pos_change = 0;
-        let mut neg_change = 0;
-        let mut hosp_change = 0;
-        let mut tested_change = 0;
-        let mut dead_change = 0;
-
-        let yesterday_el = state_data.get(1);
-        match yesterday_el {
-            Some(el) => {
-
-                // TODO: There is some fuckery going on here with numbers getting inferred as u32 and being cast to i32
-                // TODO: Fix that ^^^^^
-                let tested = el.positive.unwrap_or(0) + el.negative.unwrap_or(0);
-                pos_change = (((total_positive - el.positive.unwrap_or(0)) as f64 / el.positive.unwrap_or(0) as f64) * 100.0) as i32;
-                neg_change = (((total_negative - el.negative.unwrap_or(0)) as f64 / el.negative.unwrap_or(0) as f64) * 100.0) as i32;
-                hosp_change = (((total_hospitalized- el.hospitalized.unwrap_or(0)) as f32 / el.hospitalized.unwrap_or(0) as f32) * 100.0) as u32;
-                tested_change = (((total_tested - tested) as f64 / tested as f64) * 100.0) as i32;
-                dead_change = (((total_dead - el.death.unwrap_or(0)) as f64 / el.death.unwrap_or(0) as f64) * 100.0) as u32;
-            },
-            None => {}
-        }
-
-        return format!("
-        {state} Daily Stats ({date})\n \
-        Total positive: {total_positive} (+{pos_change}%)\n \
-        Total negative: {total_negative} (+{neg_change}%)\n \
-        Total tested: {total_tested} (+{tested_change}%)\n \
-        Total hospitalized: {total_hospitalized} (+{hosp_change}%)\n \
-        Souls lost: {total_dead} (+{dead_change}%)",
-                       state=state,
-                       date=date,
-                       total_positive=total_positive.to_formatted_string(&Locale::en),
-                       pos_change=pos_change,
-                       total_negative=total_negative.to_formatted_string(&Locale::en),
-                       neg_change=neg_change,
-                       total_hospitalized=total_hospitalized.to_formatted_string(&Locale::en),
-                       hosp_change=hosp_change,
-                       total_tested=total_tested.to_formatted_string(&Locale::en),
-                       tested_change=tested_change,
-                       total_dead=total_dead.to_formatted_string(&Locale::en),
-                       dead_change=dead_change);
-
-    }
-
-
     fn handle_mention(&self, text: String, channel: String, cli: &RtmClient) {
         let query_start = text.find(" ");
         match query_start {
@@ -228,7 +147,12 @@ impl Coronabot {
                     let state_stats = self.states_daily.read().unwrap();
                     match &*state_stats {
                         Some(data) => {
-                            let to_send = self.format_state_latest(data, &query);
+                            if !data.contains_key(query) {
+                                let to_send = format!("State data is present but does not contain stats for {state}", state=query);
+                                cli.sender().send_message(&channel, &to_send);
+                            }
+                            let state_data = data.get(query).unwrap();
+                            let to_send = self.format_daily(state_data, &query);
                             cli.sender().send_message(&channel, &to_send);
                         },
                         None => {
