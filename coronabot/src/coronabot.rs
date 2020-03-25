@@ -50,6 +50,70 @@ impl Coronabot {
         return Coronabot{bot_id: bot_id, us_daily: Arc::new(RwLock::new(None)), states_daily: Arc::new(RwLock::new(None))};
     }
 
+    fn format_daily(&self, data: &Vec<DailyStats>, geo_title: &str) -> String {
+        let mut total_positive = 0;
+        let mut total_negative = 0;
+        let mut total_hospitalized = 0;
+        let mut total_tested = 0;
+        let mut total_dead = 0;
+        let mut date = NaiveDate::parse_from_str("20200301", "%Y%m%d").unwrap();
+
+        let first_el = data.first();
+        match first_el {
+            Some(el) => {
+                println!("El: {:?}", el);
+                let datestring = el.date.unwrap_or(0).to_string();
+                date = NaiveDate::parse_from_str(&datestring, "%Y%m%d").unwrap();
+                total_positive = el.positive.unwrap_or(0);
+                total_negative = el.negative.unwrap_or(0);
+                total_hospitalized = el.hospitalized.unwrap_or(0);
+                total_tested = total_positive + total_negative;
+                total_dead = el.death.unwrap_or(0);
+            },
+            None => {}
+        }
+
+        let mut pos_change = 0;
+        let mut neg_change = 0;
+        let mut hosp_change = 0;
+        let mut tested_change = 0;
+        let mut dead_change :i32 = 0;
+
+        let yesterday_el = data.get(1);
+        match yesterday_el {
+            Some(el) => {
+                let yesterday_total_tested = el.positive.unwrap_or(0) + el.negative.unwrap_or(0);
+                pos_change = (((total_positive - el.positive.unwrap_or(0)) as f64 / el.positive.unwrap_or(0) as f64) * 100.0) as i32;
+                neg_change = (((total_negative - el.negative.unwrap_or(0)) as f64 / el.negative.unwrap_or(0) as f64) * 100.0) as i32;
+                hosp_change = (((total_hospitalized - el.hospitalized.unwrap_or(0)) as f64 / el.hospitalized.unwrap_or(0) as f64) * 100.0) as i32;
+                tested_change = (((total_tested - yesterday_total_tested) as f64 / yesterday_total_tested as f64) * 100.0) as i32;
+                dead_change = (((total_dead - el.death.unwrap_or(0)) as f64 / el.death.unwrap_or(0) as f64) * 100.0) as i32;
+            },
+            None => {}
+        }
+
+        return format!("
+        {geo_title} Overall Daily Stats ({date})\n \
+        Total positive: {total_positive} (+{pos_change}%)\n \
+        Total negative: {total_negative} (+{neg_change}%)\n \
+        Total tested: {total_tested} (+{tested_change}%)\n \
+        Total hospitalized: {total_hospitalized} (+{hosp_change}%)\n \
+        Souls lost: {total_dead} (+{dead_change}%)",
+                       geo_title=geo_title,
+                       date=date,
+                       total_positive=total_positive.to_formatted_string(&Locale::en),
+                       pos_change=pos_change,
+                       total_negative=total_negative.to_formatted_string(&Locale::en),
+                       neg_change=neg_change,
+                       total_hospitalized=total_hospitalized.to_formatted_string(&Locale::en),
+                       hosp_change=hosp_change,
+                       total_tested=total_tested.to_formatted_string(&Locale::en),
+                       tested_change=tested_change,
+                       total_dead=total_dead.to_formatted_string(&Locale::en),
+                       dead_change=dead_change);
+
+    }
+
     // TODO: This and the overall function can be refactored, they share most of the same logic
     fn format_state_latest(&self, data: &HashMap<String,Vec<DailyStats>>, state: &str) -> String {
 
@@ -130,68 +194,6 @@ impl Coronabot {
 
     }
 
-    fn format_latest(&self, data: &Vec<DailyStats>) -> String {
-
-        let mut total_positive = 0;
-        let mut total_negative = 0;
-        let mut total_hospitalized = 0;
-        let mut total_tested = 0;
-        let mut total_dead = 0;
-        let mut date = NaiveDate::parse_from_str("20200301", "%Y%m%d").unwrap();
-
-        let first_el = data.first();
-        match first_el {
-            Some(el) => {
-                println!("El: {:?}", el);
-                let datestring = el.date.unwrap_or(0).to_string();
-                date = NaiveDate::parse_from_str(&datestring, "%Y%m%d").unwrap();
-                total_positive = el.positive.unwrap_or(0);
-                total_negative = el.negative.unwrap_or(0);
-                total_hospitalized = el.hospitalized.unwrap_or(0);
-                total_tested = total_positive + total_negative;
-                total_dead = el.death.unwrap_or(0);
-            },
-            None => {}
-        }
-
-        let mut pos_change = 0;
-        let mut neg_change = 0;
-        let mut hosp_change = 0;
-        let mut tested_change = 0;
-        let mut dead_change :i32 = 0;
-
-        let yesterday_el = data.get(1);
-        match yesterday_el {
-            Some(el) => {
-                let yesterday_total_tested = el.positive.unwrap_or(0) + el.negative.unwrap_or(0);
-                pos_change = (((total_positive - el.positive.unwrap_or(0)) as f64 / el.positive.unwrap_or(0) as f64) * 100.0) as i32;
-                neg_change = (((total_negative - el.negative.unwrap_or(0)) as f64 / el.negative.unwrap_or(0) as f64) * 100.0) as i32;
-                hosp_change = (((total_hospitalized - el.hospitalized.unwrap_or(0)) as f64 / el.hospitalized.unwrap_or(0) as f64) * 100.0) as i32;
-                tested_change = (((total_tested - yesterday_total_tested) as f64 / yesterday_total_tested as f64) * 100.0) as i32;
-                dead_change = (((total_dead - el.death.unwrap_or(0)) as f64 / el.death.unwrap_or(0) as f64) * 100.0) as i32;
-            },
-            None => {}
-        }
-
-        return format!("
-        U.S. Overall Daily Stats ({date})\n \
-        Total positive: {total_positive} (+{pos_change}%)\n \
-        Total negative: {total_negative} (+{neg_change}%)\n \
-        Total tested: {total_tested} (+{tested_change}%)\n \
-        Total hospitalized: {total_hospitalized} (+{hosp_change}%)\n \
-        Souls lost: {total_dead} (+{dead_change}%)",
-                       date=date,
-                       total_positive=total_positive.to_formatted_string(&Locale::en),
-                       pos_change=pos_change,
-                       total_negative=total_negative.to_formatted_string(&Locale::en),
-                       neg_change=neg_change,
-                       total_hospitalized=total_hospitalized.to_formatted_string(&Locale::en),
-                       hosp_change=hosp_change,
-                       total_tested=total_tested.to_formatted_string(&Locale::en),
-                       tested_change=tested_change,
-                       total_dead=total_dead.to_formatted_string(&Locale::en),
-                       dead_change=dead_change);
-    }
 
     fn handle_mention(&self, text: String, channel: String, cli: &RtmClient) {
         let query_start = text.find(" ");
@@ -210,7 +212,8 @@ impl Coronabot {
                     match &*current_data {
                         Some(data) => {
                             println!("Getting data");
-                            let to_send = self.format_latest(data);
+                            // let to_send = self.format_latest(data);
+                            let to_send = self.format_daily(data, "U.S.");
                             println!("Sending data");
                             cli.sender().send_message(&channel, &to_send);
                         },
