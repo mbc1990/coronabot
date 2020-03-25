@@ -50,6 +50,72 @@ impl Coronabot {
         return Coronabot{bot_id: bot_id, us_daily: Arc::new(RwLock::new(None)), states_daily: Arc::new(RwLock::new(None))};
     }
 
+    fn format_high_scores(&self, data: &HashMap<String, Vec<DailyStats>>) -> String {
+        let mut pos_growth = 0;
+        let mut pos_growth_state = "".to_string();
+
+        let mut death_growth = 0;
+        let mut death_growth_state = "".to_string();
+
+
+        let mut date = NaiveDate::parse_from_str("20200301", "%Y%m%d").unwrap();
+
+        for (state, state_data) in data.iter() {
+            let first_el = state_data.first();
+            let mut today_pos = 0.0;
+            let mut today_death = 0.0;
+            let mut yesterday_pos = 0.0;
+            let mut yesterday_death = 0.0;
+            match first_el {
+                Some(el) => {
+                    println!("El: {:?}", el);
+                    let datestring = el.date.unwrap_or(0).to_string();
+                    date = NaiveDate::parse_from_str(&datestring, "%Y%m%d").unwrap();
+
+                    today_pos = el.positive.unwrap_or(0) as f64;
+                    today_death = el.death.unwrap_or(0) as f64;
+                },
+                None => {}
+            }
+
+            let yesterday= state_data.get(1);
+            match yesterday {
+                Some(el) => {
+                    yesterday_pos = el.positive.unwrap_or(0) as f64;
+                    yesterday_death = el.death.unwrap_or(0) as f64;
+                },
+                None => {}
+            }
+
+            let pos_growth_rate = (((today_pos - yesterday_pos) / yesterday_pos) * 100.0) as i32;
+            if pos_growth_rate > pos_growth {
+                pos_growth = pos_growth_rate;
+                let el = first_el.unwrap();
+                let state = el.state.clone().unwrap();
+                pos_growth_state = state;
+
+            }
+            let death_growth_rate = (((today_death - yesterday_death ) / yesterday_death) * 100.0) as i32;
+            if death_growth_rate > death_growth {
+                death_growth = death_growth_rate;
+                let el = first_el.unwrap();
+                let state = el.state.clone().unwrap();
+                death_growth_state = state;
+            }
+        }
+
+        return format!("
+        Daily High Scores ({date})\n \
+        Positive tests growth: {pos_growth_state} (+{pos_growth}%)\n \
+        Deaths growth: {death_growth_state} (+{death_growth}%)",
+                       date=date,
+                       pos_growth=pos_growth,
+                       pos_growth_state=pos_growth_state,
+                       death_growth=death_growth,
+                       death_growth_state = death_growth_state);
+
+    }
+
     fn format_daily(&self, data: &Vec<DailyStats>, geo_title: &str) -> String {
         let mut total_positive = 0;
         let mut total_negative = 0;
@@ -80,8 +146,10 @@ impl Coronabot {
         let mut dead_change :i32 = 0;
 
         let yesterday_el = data.get(1);
+
         match yesterday_el {
             Some(el) => {
+                // TODO: The casting in here fucks everything up, fix that
                 let yesterday_total_tested = el.positive.unwrap_or(0) + el.negative.unwrap_or(0);
                 pos_change = (((total_positive - el.positive.unwrap_or(0)) as f64 / el.positive.unwrap_or(0) as f64) * 100.0) as i32;
                 neg_change = (((total_negative - el.negative.unwrap_or(0)) as f64 / el.negative.unwrap_or(0) as f64) * 100.0) as i32;
@@ -143,6 +211,19 @@ impl Coronabot {
                 } else if query == "help" {
                     let to_send = "Usage: @Coronabot <help|latest|<2 letter state abbreviation>>";
                     cli.sender().send_message(&channel, &to_send);
+                } else if query == "high scores" {
+                    let state_stats = self.states_daily.read().unwrap();
+                    match &*state_stats {
+                        Some(data) => {
+                            let to_send = self.format_high_scores(data);
+                            cli.sender().send_message(&channel, &to_send);
+                        },
+                        None => {
+                            let to_send = "Sorry, state-level data is missing. Is the API working?";
+                            cli.sender().send_message(&channel, &to_send);
+                        }
+                    }
+
                 } else {
                     let state_stats = self.states_daily.read().unwrap();
                     match &*state_stats {
