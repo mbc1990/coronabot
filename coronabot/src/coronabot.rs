@@ -209,7 +209,7 @@ impl Coronabot {
                         }
                     }
                 } else if query == "help" {
-                    let to_send = "Usage: @Coronabot <help|latest|<2 letter state abbreviation>>";
+                    let to_send = "Usage: @Coronabot <help|latest|<2 letter state abbreviation>|high scores>";
                     cli.sender().send_message(&channel, &to_send);
                 } else if query == "high scores" {
                     let state_stats = self.states_daily.read().unwrap();
