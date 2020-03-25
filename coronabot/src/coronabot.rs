@@ -57,6 +57,9 @@ impl Coronabot {
         let mut death_growth = 0;
         let mut death_growth_state = "".to_string();
 
+        let mut mortality_rate = 0.0;
+        let mut mortality_rate_state = "".to_string();
+
 
         let mut date = NaiveDate::parse_from_str("20200301", "%Y%m%d").unwrap();
 
@@ -64,16 +67,17 @@ impl Coronabot {
             let first_el = state_data.first();
             let mut today_pos = 0.0;
             let mut today_death = 0.0;
+            let mut today_mortality = 0.0;
             let mut yesterday_pos = 0.0;
             let mut yesterday_death = 0.0;
             match first_el {
                 Some(el) => {
-                    println!("El: {:?}", el);
                     let datestring = el.date.unwrap_or(0).to_string();
                     date = NaiveDate::parse_from_str(&datestring, "%Y%m%d").unwrap();
 
                     today_pos = el.positive.unwrap_or(0) as f64;
                     today_death = el.death.unwrap_or(0) as f64;
+                    today_mortality = (today_death / today_pos) * 100.0;
                 },
                 None => {}
             }
@@ -102,13 +106,24 @@ impl Coronabot {
                 let state = el.state.clone().unwrap();
                 death_growth_state = state;
             }
+
+            if today_mortality > mortality_rate {
+                mortality_rate = today_mortality;
+                let el = first_el.unwrap();
+                let state = el.state.clone().unwrap();
+                mortality_rate_state = state;
+                println!("{:} {:}", mortality_rate_state, mortality_rate);
+            }
         }
 
         return format!("
         Daily High Scores ({date})\n \
+        Mortality rate: {mortality_rate_state} ({mortality_rate:.2}%)\n \
         Positive tests growth: {pos_growth_state} (+{pos_growth}%)\n \
         Deaths growth: {death_growth_state} (+{death_growth}%)",
                        date=date,
+                       mortality_rate=mortality_rate,
+                       mortality_rate_state=mortality_rate_state,
                        pos_growth=pos_growth,
                        pos_growth_state=pos_growth_state,
                        death_growth=death_growth,
@@ -123,11 +138,11 @@ impl Coronabot {
         let mut total_tested = 0;
         let mut total_dead = 0;
         let mut date = NaiveDate::parse_from_str("20200301", "%Y%m%d").unwrap();
+        let mut death_rate = 0.0;
 
         let first_el = data.first();
         match first_el {
             Some(el) => {
-                println!("El: {:?}", el);
                 let datestring = el.date.unwrap_or(0).to_string();
                 date = NaiveDate::parse_from_str(&datestring, "%Y%m%d").unwrap();
                 total_positive = el.positive.unwrap_or(0);
@@ -135,6 +150,7 @@ impl Coronabot {
                 total_hospitalized = el.hospitalized.unwrap_or(0);
                 total_tested = total_positive + total_negative;
                 total_dead = el.death.unwrap_or(0);
+                death_rate = ((total_dead as f64 / total_positive as f64) * 100.0);
             },
             None => {}
         }
@@ -166,9 +182,11 @@ impl Coronabot {
         Total negative: {total_negative} (+{neg_change}%)\n \
         Total tested: {total_tested} (+{tested_change}%)\n \
         Total hospitalized: {total_hospitalized} (+{hosp_change}%)\n \
+        Mortality rate: {death_rate:.2}% \n \
         Souls lost: {total_dead} (+{dead_change}%)",
                        geo_title=geo_title,
                        date=date,
+                       death_rate=death_rate,
                        total_positive=total_positive.to_formatted_string(&Locale::en),
                        pos_change=pos_change,
                        total_negative=total_negative.to_formatted_string(&Locale::en),
@@ -231,6 +249,7 @@ impl Coronabot {
                             if !data.contains_key(query) {
                                 let to_send = format!("State data is present but does not contain stats for {state}", state=query);
                                 cli.sender().send_message(&channel, &to_send);
+                                return;
                             }
                             let state_data = data.get(query).unwrap();
                             let to_send = self.format_daily(state_data, &query);
