@@ -10,41 +10,25 @@ use chrono::{DateTime, Utc, FixedOffset, NaiveDate};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
-#[derive(Serialize, Deserialize, Debug)]
-struct USDailyStats {
-    date: Option<u32>,
-    states: Option<u32>,
-    positive: Option<u32>,
-    negative: Option<u32>,
-    posNeg: Option<u32>,
-    pending: Option<u32>,
-    hospitalized: Option<u32>,
-    death: Option<u32>,
-    total: Option<u32>
-}
-
-/*
-{"date":20200323,"state":"WA","positive":1996,"negative":28879,"pending":null,"hospitalized":null,"death":95,"total":30875,"dateChecked":"2020-03-23T20:00:00Z"}
-*/
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct StateDailyStats {
-    date: Option<u32>,
+struct DailyStats {
     state: Option<String>,
+    date: Option<u32>,
     positive: Option<u32>,
     negative: Option<u32>,
     pending: Option<i32>,
     hospitalized: Option<u32>,
     death: Option<u32>,
     total: Option<u32>,
-    dateChecked: Option<String>
 }
 
 pub struct Coronabot {
     bot_id: String,
-    us_daily: Arc<RwLock<Option<Vec<USDailyStats>>>>,
-    states_daily: Arc<RwLock<Option<HashMap<String, Vec<StateDailyStats>>>>>
+    us_daily: Arc<RwLock<Option<Vec<DailyStats>>>>,
+    states_daily: Arc<RwLock<Option<HashMap<String, Vec<DailyStats>>>>>
 }
-fn construct_states_map(data: &Vec<StateDailyStats>) -> HashMap<String, Vec<StateDailyStats>> {
+
+fn construct_states_map(data: &Vec<DailyStats>) -> HashMap<String, Vec<DailyStats>> {
     let mut ret = HashMap::new();
     for dp in data.iter() {
         let state = dp.state.clone().unwrap_or("N/A".to_string());
@@ -67,7 +51,7 @@ impl Coronabot {
     }
 
     // TODO: This and the overall function can be refactored, they share most of the same logic
-    fn format_state_latest(&self, data: &HashMap<String,Vec<StateDailyStats>>, state: &str) -> String {
+    fn format_state_latest(&self, data: &HashMap<String,Vec<DailyStats>>, state: &str) -> String {
 
         if !data.contains_key(state) {
             return format!("State data is present but does not contain stats for {state}", state=state);
@@ -146,7 +130,7 @@ impl Coronabot {
 
     }
 
-    fn format_latest(&self, data: &Vec<USDailyStats>) -> String {
+    fn format_latest(&self, data: &Vec<DailyStats>) -> String {
 
         let mut total_positive = 0;
         let mut total_negative = 0;
@@ -164,7 +148,7 @@ impl Coronabot {
                 total_positive = el.positive.unwrap_or(0);
                 total_negative = el.negative.unwrap_or(0);
                 total_hospitalized = el.hospitalized.unwrap_or(0);
-                total_tested = el.posNeg.unwrap_or(0);
+                total_tested = total_positive + total_negative;
                 total_dead = el.death.unwrap_or(0);
             },
             None => {}
@@ -179,10 +163,11 @@ impl Coronabot {
         let yesterday_el = data.get(1);
         match yesterday_el {
             Some(el) => {
+                let yesterday_total_tested = el.positive.unwrap_or(0) + el.negative.unwrap_or(0);
                 pos_change = (((total_positive - el.positive.unwrap_or(0)) as f64 / el.positive.unwrap_or(0) as f64) * 100.0) as i32;
                 neg_change = (((total_negative - el.negative.unwrap_or(0)) as f64 / el.negative.unwrap_or(0) as f64) * 100.0) as i32;
-                hosp_change = (((total_hospitalized- el.hospitalized.unwrap_or(0)) as f64 / el.hospitalized.unwrap_or(0) as f64) * 100.0) as i32;
-                tested_change = (((total_tested - el.posNeg.unwrap_or(0)) as f64 / el.posNeg.unwrap_or(0) as f64) * 100.0) as i32;
+                hosp_change = (((total_hospitalized - el.hospitalized.unwrap_or(0)) as f64 / el.hospitalized.unwrap_or(0) as f64) * 100.0) as i32;
+                tested_change = (((total_tested - yesterday_total_tested) as f64 / yesterday_total_tested as f64) * 100.0) as i32;
                 dead_change = (((total_dead - el.death.unwrap_or(0)) as f64 / el.death.unwrap_or(0) as f64) * 100.0) as i32;
             },
             None => {}
@@ -265,7 +250,7 @@ impl Coronabot {
                     .unwrap()
                     .text()
                     .unwrap();
-                let parsed: Vec<USDailyStats> = serde_json::from_str(&body).unwrap();
+                let parsed: Vec<DailyStats> = serde_json::from_str(&body).unwrap();
                 let mut data = my_us_daily
                     .write()
                     .unwrap();
@@ -279,7 +264,7 @@ impl Coronabot {
                     .unwrap()
                     .text()
                     .unwrap();
-                let parsed: Vec<StateDailyStats> = serde_json::from_str(&body).unwrap();
+                let parsed: Vec<DailyStats> = serde_json::from_str(&body).unwrap();
                 let states_map = construct_states_map(&parsed);
                 let mut states_data = my_states_daily
                     .write()
