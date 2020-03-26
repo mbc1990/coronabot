@@ -117,7 +117,7 @@ impl Coronabot {
         }
 
         return format!("
-        Daily High Scores ({date})\n \
+        Daily Worsts ({date})\n \
         Mortality rate: {mortality_rate_state} ({mortality_rate:.2}%)\n \
         Positive tests growth: {pos_growth_state} (+{pos_growth}%)\n \
         Deaths growth: {death_growth_state} (+{death_growth}%)",
