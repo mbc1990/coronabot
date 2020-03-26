@@ -6,9 +6,13 @@ use std::thread;
 use std::time::Duration;
 use std::sync::{Arc, RwLock};
 use num_format::{Locale, ToFormattedString};
-use chrono::{DateTime, Utc, FixedOffset, NaiveDate};
+use chrono::{DateTime, Utc, FixedOffset, NaiveDate, NaiveTime};
+use gnuplot::{Figure, Caption, Color, AxesCommon};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use gnuplot::AutoOption::{Fix, Auto};
+use gnuplot::TickOption::{Mirror, Format};
+use gnuplot::LabelOption::Font;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct DailyStats {
@@ -131,6 +135,32 @@ impl Coronabot {
 
     }
 
+    fn generate_daily_chart(&self, data: &Vec<DailyStats>) -> String {
+        let mut x = Vec::new();
+        let mut y = Vec::new();
+        let mut my_data = data.clone();
+        my_data.reverse();
+        for daily in my_data.iter() {
+            let num_pos = daily.positive.unwrap_or(0);
+            y.push(num_pos);
+
+            let date = NaiveDate::parse_from_str(&daily.date.unwrap().to_string(), "%Y%m%d").unwrap();
+            let t = NaiveTime::from_hms(0, 0, 0);
+            let dt = date.and_time(t);
+            // TODO: How to get dates/time series on x axis?
+            x.push(dt.timestamp());
+        }
+        let mut fg = Figure::new();
+        fg.axes2d()
+            .lines(&x, &y, &[Caption("Positive tests"), Color("black")])
+            .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
+            .set_x_time(true);
+        println!("Saving to disk...");
+        let res = fg.save_to_png("/tmp/testfig.png", 800, 400);
+        println!("Done saving {:?}", res);
+        return "".to_string();
+    }
+
     fn format_daily(&self, data: &Vec<DailyStats>, geo_title: &str) -> String {
         let mut total_positive = 0;
         let mut total_negative = 0;
@@ -219,6 +249,7 @@ impl Coronabot {
                             println!("Getting data");
                             // let to_send = self.format_latest(data);
                             let to_send = self.format_daily(data, "U.S.");
+                            let chart_url = self.generate_daily_chart(data);
                             println!("Sending data");
                             cli.sender().send_message(&channel, &to_send);
                         },
