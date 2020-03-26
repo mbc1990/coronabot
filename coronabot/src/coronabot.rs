@@ -135,7 +135,7 @@ impl Coronabot {
 
     }
 
-    fn generate_daily_chart(&self, data: &Vec<DailyStats>) -> String {
+    fn generate_daily_chart(&self, data: &Vec<DailyStats>, title: String) -> String {
         let mut x = Vec::new();
         let mut y = Vec::new();
         let mut my_data = data.clone();
@@ -147,11 +147,11 @@ impl Coronabot {
             let date = NaiveDate::parse_from_str(&daily.date.unwrap().to_string(), "%Y%m%d").unwrap();
             let t = NaiveTime::from_hms(0, 0, 0);
             let dt = date.and_time(t);
-            // TODO: How to get dates/time series on x axis?
             x.push(dt.timestamp());
         }
         let mut fg = Figure::new();
         fg.axes2d()
+            .set_title(&title, &[])
             .lines(&x, &y, &[Caption("Positive tests"), Color("black")])
             .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
             .set_x_time(true);
@@ -249,7 +249,7 @@ impl Coronabot {
                             println!("Getting data");
                             // let to_send = self.format_latest(data);
                             let to_send = self.format_daily(data, "U.S.");
-                            let chart_url = self.generate_daily_chart(data);
+                            let chart_url = self.generate_daily_chart(data, "U.S. Coronavirus Cases".to_string());
                             println!("Sending data");
                             cli.sender().send_message(&channel, &to_send);
                         },
@@ -283,6 +283,7 @@ impl Coronabot {
                                 return;
                             }
                             let state_data = data.get(query).unwrap();
+                            let chart_url = self.generate_daily_chart(state_data, format!("{state} Coronavirus Cases", state=query));
                             let to_send = self.format_daily(state_data, &query);
                             cli.sender().send_message(&channel, &to_send);
                         },
