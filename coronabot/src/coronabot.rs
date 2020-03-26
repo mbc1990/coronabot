@@ -215,35 +215,42 @@ impl Coronabot {
             None => {}
         }
 
-        let mut pos_change = 0;
-        let mut neg_change = 0;
-        let mut hosp_change = 0;
-        let mut tested_change = 0;
-        let mut dead_change :i32 = 0;
+        let mut pos_change = 0.0;
+        let mut neg_change = 0.0;
+        let mut hosp_change = 0.0;
+        let mut tested_change = 0.0;
+        let mut dead_change = 0.0;
 
         let yesterday_el = data.get(1);
 
         match yesterday_el {
             Some(el) => {
-                // TODO: The casting in here fucks everything up, fix that
                 let yesterday_total_tested = el.positive.unwrap_or(0) + el.negative.unwrap_or(0);
-                pos_change = (((total_positive - el.positive.unwrap_or(0)) as f64 / el.positive.unwrap_or(0) as f64) * 100.0) as i32;
-                neg_change = (((total_negative - el.negative.unwrap_or(0)) as f64 / el.negative.unwrap_or(0) as f64) * 100.0) as i32;
-                hosp_change = (((total_hospitalized - el.hospitalized.unwrap_or(0)) as f64 / el.hospitalized.unwrap_or(0) as f64) * 100.0) as i32;
-                tested_change = (((total_tested - yesterday_total_tested) as f64 / yesterday_total_tested as f64) * 100.0) as i32;
-                dead_change = (((total_dead - el.death.unwrap_or(0)) as f64 / el.death.unwrap_or(0) as f64) * 100.0) as i32;
+                pos_change = (((total_positive - el.positive.unwrap_or(0)) as f64 / el.positive.unwrap_or(0) as f64) * 100.0);
+                neg_change = (((total_negative - el.negative.unwrap_or(0)) as f64 / el.negative.unwrap_or(0) as f64) * 100.0);
+                hosp_change = (((total_hospitalized - el.hospitalized.unwrap_or(0)) as f64 / el.hospitalized.unwrap_or(0) as f64) * 100.0);
+                tested_change = (((total_tested - yesterday_total_tested) as f64 / yesterday_total_tested as f64) * 100.0);
+                dead_change = (((total_dead - el.death.unwrap_or(0)) as f64 / el.death.unwrap_or(0) as f64) * 100.0);
             },
             None => {}
         }
 
+        // If data is unreported or actually 0, % change will be undefined (0/0) but let's just say it's zero because it makes sense intuitively
+        if hosp_change.is_nan() {
+            hosp_change = 0.0;
+        }
+        if dead_change.is_nan() {
+            dead_change = 0.0;
+        }
+
         return format!("
         {geo_title} Overall Daily Stats ({date})\n \
-        Total positive: {total_positive} (+{pos_change}%)\n \
-        Total negative: {total_negative} (+{neg_change}%)\n \
-        Total tested: {total_tested} (+{tested_change}%)\n \
-        Total hospitalized: {total_hospitalized} (+{hosp_change}%)\n \
+        Total positive: {total_positive} (+{pos_change:.0}%)\n \
+        Total negative: {total_negative} (+{neg_change:.0}%)\n \
+        Total tested: {total_tested} (+{tested_change:.0}%)\n \
+        Total hospitalized: {total_hospitalized} (+{hosp_change:.0}%)\n \
         Mortality rate: {death_rate:.2}% \n \
-        Souls lost: {total_dead} (+{dead_change}%)",
+        Souls lost: {total_dead} (+{dead_change:.0}%)",
                        geo_title=geo_title,
                        date=date,
                        death_rate=death_rate,
@@ -304,7 +311,6 @@ impl Coronabot {
                             cli.sender().send_message(&channel, &to_send);
                         }
                     }
-
                 } else {
                     let state_stats = self.states_daily.read().unwrap();
                     match &*state_stats {
