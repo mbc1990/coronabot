@@ -14,3 +14,4 @@ reqwest = {version = "0.10.4", features = ["json"]}
 num-format = "0.4.0"
 chrono = "0.4.11"
 gnuplot = "0.0.34"
+uuid = {version = "0.8.1", features = ["v4"]}

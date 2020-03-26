@@ -13,6 +13,8 @@ use std::collections::hash_map::Entry;
 use gnuplot::AutoOption::{Fix, Auto};
 use gnuplot::TickOption::{Mirror, Format};
 use gnuplot::LabelOption::Font;
+use uuid::Uuid;
+
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct DailyStats {
@@ -156,7 +158,20 @@ impl Coronabot {
             .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
             .set_x_time(true);
         println!("Saving to disk...");
-        let res = fg.save_to_png("/tmp/testfig.png", 800, 400);
+        let mut fpath = "/tmp/".to_string();
+        let uuid = Uuid::new_v4().to_string();
+        fpath.push_str(&uuid);
+        fpath.push_str(".png");
+        let res = fg.save_to_png(&fpath.to_string(), 800, 400);
+        match res {
+            Ok(()) => {
+                println!("Saved {:}", fpath);
+                // TODO: Upload to s3
+            },
+            Err(err) => {
+                return format!("Sorry, there was an error generating your plot:\n {:?}", err);
+            }
+        }
         println!("Done saving {:?}", res);
         return "".to_string();
     }
