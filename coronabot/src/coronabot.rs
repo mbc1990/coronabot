@@ -141,7 +141,67 @@ impl Coronabot {
 
     }
 
-    fn generate_daily_chart(&self, data: &Vec<DailyStats>, title: String) -> String {
+
+    // New cases, 5 day trailing average
+    fn generate_new_cases_chart(&self,  data: &Vec<DailyStats>, title: String) -> String {
+        let mut x = Vec::new();
+        let mut y = Vec::new();
+        let mut my_data = data.clone();
+        my_data.reverse();
+        for i in 6..(my_data.len() - 1) {
+            let mut total_diff = 0;
+            for k in i-5..i {
+                let today = my_data.get(k).unwrap();
+                let yesterday = my_data.get(k-1).unwrap();
+                let diff = today.positive.unwrap() - yesterday.positive.unwrap();
+                total_diff += diff;
+            }
+            let avg_diff = total_diff as f32 / 5.0;
+            y.push(avg_diff);
+            let daily = my_data.get(i).unwrap();
+            let date = NaiveDate::parse_from_str(&daily.date.unwrap().to_string(), "%Y%m%d").unwrap();
+            let t = NaiveTime::from_hms(0, 0, 0);
+            let dt = date.and_time(t);
+            x.push(dt.timestamp());
+        }
+        let mut fg = Figure::new();
+        fg.axes2d()
+            .set_title(&title, &[])
+            .lines(&x, &y, &[Caption("New positives DoD, 5 day trailing average"), Color("black")])
+            .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
+            .set_x_time(true);
+        println!("Saving to disk...");
+        let mut fpath = "/tmp/".to_string();
+        let uuid = Uuid::new_v4().to_string();
+        fpath.push_str(&uuid);
+        fpath.push_str(".png");
+        let mut s3_path = "coronavirus/".to_string();
+        s3_path.push_str(&uuid);
+        s3_path.push_str(".png");
+        let res = fg.save_to_png(&fpath.to_string(), 800, 400);
+        match res {
+            Ok(()) => {
+                println!("Saved {:}", fpath);
+                let credentials = Credentials::default();
+                let region = s3::region::Region::UsEast1;
+                let bucket = Bucket::new("image-paster", region, credentials).unwrap();
+                let mut f = File::open(&fpath).unwrap();
+                let mut buffer = Vec::new();
+                f.read_to_end(&mut buffer).unwrap();
+                bucket.put_object_blocking(&s3_path, &buffer, "multipart/form-data");
+                let mut public_url = "https://image-paster.s3.amazonaws.com/".to_string();
+                public_url.push_str(&s3_path);
+                println!("Stored in s3: {:}", &public_url);
+                return public_url;
+            },
+            Err(err) => {
+                return format!("Sorry, there was an error generating your plot:\n {:?}", err);
+            }
+        }
+    }
+
+    // Positive cases by day
+    fn generate_pos_cases_chart(&self, data: &Vec<DailyStats>, title: String) -> String {
         let mut x = Vec::new();
         let mut y = Vec::new();
         let mut my_data = data.clone();
@@ -286,7 +346,7 @@ impl Coronabot {
                             println!("Getting data");
                             // let to_send = self.format_latest(data);
                             let mut to_send = self.format_daily(data, "U.S.");
-                            let chart_url = self.generate_daily_chart(data, "U.S. Coronavirus Cases".to_string());
+                            let chart_url = self.generate_new_cases_chart(data, "U.S. Coronavirus Cases".to_string());
                             to_send.push_str("\n");
                             to_send.push_str(&chart_url);
                             println!("Sending data");
@@ -294,6 +354,7 @@ impl Coronabot {
                         },
                         None => {
                             let to_send = "Sorry, country-level data is missing. Is the API working?";
+                            cli.sender().send_message(&channel, &to_send);
                         }
                     }
                 } else if query == "help" {
@@ -321,7 +382,7 @@ impl Coronabot {
                                 return;
                             }
                             let state_data = data.get(query).unwrap();
-                            let chart_url = self.generate_daily_chart(state_data, format!("{state} Coronavirus Cases", state=query));
+                            let chart_url = self.generate_new_cases_chart(state_data, format!("{state} Coronavirus Cases", state=query));
                             let mut to_send = self.format_daily(state_data, &query);
                             to_send.push_str("\n");
                             to_send.push_str(&chart_url);
