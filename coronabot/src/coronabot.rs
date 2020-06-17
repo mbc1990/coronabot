@@ -153,7 +153,12 @@ impl Coronabot {
             for k in i-5..i {
                 let today = my_data.get(k).unwrap();
                 let yesterday = my_data.get(k-1).unwrap();
-                let diff = today.positive.unwrap() - yesterday.positive.unwrap();
+
+                // N.B. This handles bad Florida data that appears to show number of positive cases decreasing (which is impossible)
+                let mut diff = 0;
+                if (yesterday.positive.unwrap() <= today.positive.unwrap()) {
+                    diff = today.positive.unwrap() - yesterday.positive.unwrap();
+                }
                 total_diff += diff;
             }
             let avg_diff = total_diff as f32 / 5.0;
