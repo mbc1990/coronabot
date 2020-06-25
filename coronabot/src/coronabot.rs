@@ -18,6 +18,9 @@ use s3::bucket::Bucket;
 use s3::credentials::Credentials;
 use std::fs::File;
 use std::io::Read;
+use gnuplot::PlotOption::Axes;
+use gnuplot::XAxis::X1;
+use gnuplot::YAxis::{Y1, Y2};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -146,10 +149,13 @@ impl Coronabot {
     fn generate_new_cases_chart(&self,  data: &Vec<DailyStats>, title: String) -> String {
         let mut x = Vec::new();
         let mut y = Vec::new();
+        let mut y2 = Vec::new();
         let mut my_data = data.clone();
         my_data.reverse();
         for i in 6..(my_data.len() - 1) {
+
             let mut total_diff = 0;
+            let mut total_diff_deaths = 0;
             for k in i-5..i {
                 let today = my_data.get(k).unwrap();
                 let yesterday = my_data.get(k-1).unwrap();
@@ -160,9 +166,19 @@ impl Coronabot {
                     diff = today.positive.unwrap() - yesterday.positive.unwrap();
                 }
                 total_diff += diff;
+
+                let mut diff_deaths = 0;
+                if (yesterday.death.unwrap_or(0) <= today.death.unwrap_or(0)) {
+                    diff_deaths = today.death.unwrap_or(0) - yesterday.death.unwrap_or(0);
+                }
+                total_diff_deaths += diff_deaths;
             }
             let avg_diff = total_diff as f32 / 5.0;
+            let avg_diff_deaths = total_diff_deaths as f32 / 5.0;
+
+
             y.push(avg_diff);
+            y2.push(avg_diff_deaths);
             let daily = my_data.get(i).unwrap();
             let date = NaiveDate::parse_from_str(&daily.date.unwrap().to_string(), "%Y%m%d").unwrap();
             let t = NaiveTime::from_hms(0, 0, 0);
@@ -172,9 +188,25 @@ impl Coronabot {
         let mut fg = Figure::new();
         fg.axes2d()
             .set_title(&title, &[])
-            .lines(&x, &y, &[Caption("New positives DoD, 5 day trailing average"), Color("black")])
+            .lines_points(
+                &x,
+                &y,
+                &[Axes(X1, Y1), Color("black")],
+            )
+            .lines_points(
+                &x,
+                &y2,
+                &[Axes(X1, Y2), Color("blue")],
+            )
+
+            .set_y_ticks(Some((Auto, 0)), &[Mirror(false)], &[])  // Make Y1 not mirror.
+            .set_y2_ticks(Some((Auto, 0)), &[Mirror(false)], &[])  // Make Y2 not mirror, and visible.
+            .set_y_label("Positives", &[])
+            .set_y2_label("Deaths", &[])
             .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
             .set_x_time(true);
+
+
         println!("Saving to disk...");
         let mut fpath = "/tmp/".to_string();
         let uuid = Uuid::new_v4().to_string();
