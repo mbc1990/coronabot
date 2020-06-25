@@ -7,18 +7,18 @@ use std::time::Duration;
 use std::sync::{Arc, RwLock};
 use num_format::{Locale, ToFormattedString};
 use chrono::{DateTime, Utc, FixedOffset, NaiveDate, NaiveTime};
-use gnuplot::{Figure, Caption, Color, AxesCommon};
+use gnuplot::{Figure, Caption, Color, AxesCommon, DashType};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use gnuplot::AutoOption::{Fix, Auto};
 use gnuplot::TickOption::{Mirror, Format};
-use gnuplot::LabelOption::Font;
+use gnuplot::LabelOption::{Font, TextColor};
 use uuid::Uuid;
 use s3::bucket::Bucket;
 use s3::credentials::Credentials;
 use std::fs::File;
 use std::io::Read;
-use gnuplot::PlotOption::Axes;
+use gnuplot::PlotOption::{Axes, LineStyle, PointSize};
 use gnuplot::XAxis::X1;
 use gnuplot::YAxis::{Y1, Y2};
 
@@ -191,18 +191,17 @@ impl Coronabot {
             .lines_points(
                 &x,
                 &y,
-                &[Axes(X1, Y1), Color("black")],
+                &[Axes(X1, Y1), Color("black"), PointSize(0.0)],
             )
             .lines_points(
                 &x,
                 &y2,
-                &[Axes(X1, Y2), Color("blue")],
+                &[Axes(X1, Y2), Color("blue"), PointSize(0.0)],
             )
-
             .set_y_ticks(Some((Auto, 0)), &[Mirror(false)], &[])  // Make Y1 not mirror.
             .set_y2_ticks(Some((Auto, 0)), &[Mirror(false)], &[])  // Make Y2 not mirror, and visible.
-            .set_y_label("Positives", &[])
-            .set_y2_label("Deaths", &[])
+            .set_y_label("Positives", &[TextColor("black")])
+            .set_y2_label("Deaths", &[TextColor("blue")])
             .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
             .set_x_time(true);
 
