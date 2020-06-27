@@ -155,7 +155,6 @@ impl Coronabot {
         for i in 6..(my_data.len() - 1) {
 
             let mut total_diff = 0;
-            let mut total_diff_deaths = 0;
             for k in i-5..i {
                 let today = my_data.get(k).unwrap();
                 let yesterday = my_data.get(k-1).unwrap();
@@ -167,21 +166,23 @@ impl Coronabot {
                 }
                 total_diff += diff;
 
-                let mut diff_deaths = 0;
-                if (yesterday.death.unwrap_or(0) <= today.death.unwrap_or(0)) {
-                    diff_deaths = today.death.unwrap_or(0) - yesterday.death.unwrap_or(0);
-                }
-                total_diff_deaths += diff_deaths;
             }
             let avg_diff = total_diff as f32 / 5.0;
-            let avg_diff_deaths = total_diff_deaths as f32 / 5.0;
 
 
             y.push(avg_diff);
-            // y2.push(avg_diff_deaths);
-            let total_pos = my_data.get(i).unwrap().positive.unwrap_or(0) as f32;
-            let total_tested = my_data.get(i).unwrap().total.unwrap_or(0) as f32;
-            let infection_rate = (total_pos / total_tested) * 100.0;
+
+            // TODO: Macro for this noisy code?
+            let total_pos = (my_data.get(i).unwrap().positive.unwrap_or(0) as f32) - (my_data.get(i-5).unwrap().positive.unwrap_or(0) as f32);
+            let total_tested = (my_data.get(i).unwrap().total.unwrap_or(0) as f32) - (my_data.get(i-5).unwrap().total.unwrap_or(0) as f32);
+
+            let mut infection_rate = (total_pos / total_tested) * 100.0;
+
+
+            // Clean up some noisy data observed in NY
+            if infection_rate < 0.0 || infection_rate > 75.0 {
+               infection_rate = 0.0;
+            }
             y2.push(infection_rate);
             let daily = my_data.get(i).unwrap();
             let date = NaiveDate::parse_from_str(&daily.date.unwrap().to_string(), "%Y%m%d").unwrap();
@@ -205,7 +206,7 @@ impl Coronabot {
             .set_y_ticks(Some((Auto, 0)), &[Mirror(false)], &[])  // Make Y1 not mirror.
             .set_y2_ticks(Some((Auto, 0)), &[Mirror(false), Format("%.2f")], &[])  // Make Y2 not mirror, and visible.
             .set_y_label("Positives", &[TextColor("black")])
-            .set_y2_label("% Positive", &[TextColor("blue")])
+            .set_y2_label("% Positive (trailing 5 days)", &[TextColor("blue")])
             .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
             .set_x_time(true);
 
