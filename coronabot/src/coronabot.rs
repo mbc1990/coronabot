@@ -178,7 +178,11 @@ impl Coronabot {
 
 
             y.push(avg_diff);
-            y2.push(avg_diff_deaths);
+            // y2.push(avg_diff_deaths);
+            let total_pos = my_data.get(i).unwrap().positive.unwrap_or(0) as f32;
+            let total_tested = my_data.get(i).unwrap().total.unwrap_or(0) as f32;
+            let infection_rate = (total_pos / total_tested) * 100.0;
+            y2.push(infection_rate);
             let daily = my_data.get(i).unwrap();
             let date = NaiveDate::parse_from_str(&daily.date.unwrap().to_string(), "%Y%m%d").unwrap();
             let t = NaiveTime::from_hms(0, 0, 0);
@@ -199,9 +203,9 @@ impl Coronabot {
                 &[Axes(X1, Y2), Color("blue"), PointSize(0.0)],
             )
             .set_y_ticks(Some((Auto, 0)), &[Mirror(false)], &[])  // Make Y1 not mirror.
-            .set_y2_ticks(Some((Auto, 0)), &[Mirror(false)], &[])  // Make Y2 not mirror, and visible.
+            .set_y2_ticks(Some((Auto, 0)), &[Mirror(false), Format("%.2f")], &[])  // Make Y2 not mirror, and visible.
             .set_y_label("Positives", &[TextColor("black")])
-            .set_y2_label("Deaths", &[TextColor("blue")])
+            .set_y2_label("% Positive", &[TextColor("blue")])
             .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
             .set_x_time(true);
 
