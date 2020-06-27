@@ -178,9 +178,9 @@ impl Coronabot {
 
             let mut infection_rate = (total_pos / total_tested) * 100.0;
 
-
             // Clean up some noisy data observed in NY
-            if infection_rate < 0.0 || infection_rate > 75.0 {
+            // Not ideal but hopefully helps a little
+            if infection_rate < 0.0 || infection_rate > 50.0 {
                infection_rate = 0.0;
             }
             y2.push(infection_rate);
