@@ -39,6 +39,8 @@ pub struct Coronabot {
     bot_id: String,
     us_daily: Arc<RwLock<Option<Vec<DailyStats>>>>,
     states_daily: Arc<RwLock<Option<HashMap<String, Vec<DailyStats>>>>>
+
+    // TODO: Should have a list of data sources that can be accessed
 }
 
 fn construct_states_map(data: &Vec<DailyStats>) -> HashMap<String, Vec<DailyStats>> {
@@ -144,58 +146,20 @@ impl Coronabot {
 
     }
 
-
-    // New cases, 5 day trailing average
-    fn generate_new_cases_chart(&self,  data: &Vec<DailyStats>, title: String) -> String {
-        let mut x = Vec::new();
-        let mut y = Vec::new();
-        let mut y2 = Vec::new();
-        let mut my_data = data.clone();
-        my_data.reverse();
-        for i in 6..(my_data.len() - 1) {
-
-            let mut total_diff = 0;
-            for k in i-5..i {
-                let today = my_data.get(k).unwrap();
-                let yesterday = my_data.get(k-1).unwrap();
-
-                // N.B. This handles bad Florida data that appears to show number of positive cases decreasing (which is impossible)
-                let mut diff = 0;
-                if (yesterday.positive.unwrap() <= today.positive.unwrap()) {
-                    diff = today.positive.unwrap() - yesterday.positive.unwrap();
-                }
-                total_diff += diff;
-
-            }
-            let avg_diff = total_diff as f32 / 5.0;
-
-
-            y.push(avg_diff);
-
-            // TODO: Macro for this noisy code?
-            let total_pos = (my_data.get(i).unwrap().positive.unwrap_or(0) as f32) - (my_data.get(i-5).unwrap().positive.unwrap_or(0) as f32);
-            let total_tested = (my_data.get(i).unwrap().total.unwrap_or(0) as f32) - (my_data.get(i-5).unwrap().total.unwrap_or(0) as f32);
-
-            let mut infection_rate = (total_pos / total_tested) * 100.0;
-
-            // Clean up some noisy data observed in NY
-            // Not ideal but hopefully helps a little
-            if infection_rate < 0.0 || infection_rate > 50.0 {
-               infection_rate = 0.0;
-            }
-            y2.push(infection_rate);
-            let daily = my_data.get(i).unwrap();
-            let date = NaiveDate::parse_from_str(&daily.date.unwrap().to_string(), "%Y%m%d").unwrap();
-            let t = NaiveTime::from_hms(0, 0, 0);
-            let dt = date.and_time(t);
-            x.push(dt.timestamp());
-        }
+    fn generate_chart(&self,
+                      x: Vec<i64>,
+                      y1: Vec<f32>,
+                      y2: Vec<f32>,
+                      title: &str,
+                      x1_name: &str,
+                      y1_name: &str,
+                      y2_name: &str) -> String {
         let mut fg = Figure::new();
         fg.axes2d()
             .set_title(&title, &[])
             .lines_points(
                 &x,
-                &y,
+                &y1,
                 &[Axes(X1, Y1), Color("black"), PointSize(0.0)],
             )
             .lines_points(
@@ -205,8 +169,8 @@ impl Coronabot {
             )
             .set_y_ticks(Some((Auto, 0)), &[Mirror(false)], &[])  // Make Y1 not mirror.
             .set_y2_ticks(Some((Auto, 0)), &[Mirror(false), Format("%.2f")], &[])  // Make Y2 not mirror, and visible.
-            .set_y_label("Positives", &[TextColor("black")])
-            .set_y2_label("% Positive (trailing 5 days)", &[TextColor("blue")])
+            .set_y_label(y1_name, &[TextColor("black")])
+            .set_y2_label(y2_name, &[TextColor("blue")])
             .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
             .set_x_time(true);
 
@@ -240,56 +204,51 @@ impl Coronabot {
             }
         }
     }
-
-    // Positive cases by day
-    fn generate_pos_cases_chart(&self, data: &Vec<DailyStats>, title: String) -> String {
+    fn generate_new_cases_chart(&self,  data: &Vec<DailyStats>, title: String) -> String {
         let mut x = Vec::new();
         let mut y = Vec::new();
+        let mut y2 = Vec::new();
         let mut my_data = data.clone();
         my_data.reverse();
-        for daily in my_data.iter() {
-            let num_pos = daily.positive.unwrap_or(0);
-            y.push(num_pos);
+        for i in 6..(my_data.len() - 1) {
 
+            let mut total_diff = 0;
+            for k in i-5..i {
+                let today = my_data.get(k).unwrap();
+                let yesterday = my_data.get(k-1).unwrap();
+
+                // N.B. This handles bad Florida data that appears to show number of positive cases decreasing (which is impossible)
+                let mut diff = 0;
+                if (yesterday.positive.unwrap() <= today.positive.unwrap()) {
+                    diff = today.positive.unwrap() - yesterday.positive.unwrap();
+                }
+                total_diff += diff;
+            }
+            let avg_diff = total_diff as f32 / 5.0;
+
+
+            y.push(avg_diff);
+
+            // TODO: Macro for this noisy code?
+            let total_pos = (my_data.get(i).unwrap().positive.unwrap_or(0) as f32) - (my_data.get(i-5).unwrap().positive.unwrap_or(0) as f32);
+            let total_tested = (my_data.get(i).unwrap().total.unwrap_or(0) as f32) - (my_data.get(i-5).unwrap().total.unwrap_or(0) as f32);
+
+            let mut infection_rate = (total_pos / total_tested) * 100.0;
+
+            // Clean up some noisy data observed in NY
+            // Not ideal but hopefully helps a little
+            if infection_rate < 0.0 || infection_rate > 50.0 {
+                infection_rate = 0.0;
+            }
+            y2.push(infection_rate);
+            let daily = my_data.get(i).unwrap();
             let date = NaiveDate::parse_from_str(&daily.date.unwrap().to_string(), "%Y%m%d").unwrap();
             let t = NaiveTime::from_hms(0, 0, 0);
             let dt = date.and_time(t);
             x.push(dt.timestamp());
         }
-        let mut fg = Figure::new();
-        fg.axes2d()
-            .set_title(&title, &[])
-            .lines(&x, &y, &[Caption("Positive tests"), Color("black")])
-            .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
-            .set_x_time(true);
-        println!("Saving to disk...");
-        let mut fpath = "/tmp/".to_string();
-        let uuid = Uuid::new_v4().to_string();
-        fpath.push_str(&uuid);
-        fpath.push_str(".png");
-        let mut s3_path = "coronavirus/".to_string();
-        s3_path.push_str(&uuid);
-        s3_path.push_str(".png");
-        let res = fg.save_to_png(&fpath.to_string(), 800, 400);
-        match res {
-            Ok(()) => {
-                println!("Saved {:}", fpath);
-                let credentials = Credentials::default();
-                let region = s3::region::Region::UsEast1;
-                let bucket = Bucket::new("image-paster", region, credentials).unwrap();
-                let mut f = File::open(&fpath).unwrap();
-                let mut buffer = Vec::new();
-                f.read_to_end(&mut buffer).unwrap();
-                bucket.put_object_blocking(&s3_path, &buffer, "multipart/form-data");
-                let mut public_url = "https://image-paster.s3.amazonaws.com/".to_string();
-                public_url.push_str(&s3_path);
-                println!("Stored in s3: {:}", &public_url);
-                return public_url;
-            },
-            Err(err) => {
-                return format!("Sorry, there was an error generating your plot:\n {:?}", err);
-            }
-        }
+        let url = self.generate_chart(x, y, y2, &title, "", "Positives", "% Positive (trailing 5 days)");
+        return url;
     }
 
     fn format_daily(&self, data: &Vec<DailyStats>, geo_title: &str) -> String {
