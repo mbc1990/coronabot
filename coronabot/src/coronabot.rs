@@ -162,15 +162,17 @@ impl Coronabot {
                 &y1,
                 &[Axes(X1, Y1), Color("black"), PointSize(0.0)],
             )
+            /*
             .lines_points(
                 &x,
                 &y2,
                 &[Axes(X1, Y2), Color("blue"), PointSize(0.0)],
             )
+            */
             .set_y_ticks(Some((Auto, 0)), &[Mirror(false)], &[])  // Make Y1 not mirror.
-            .set_y2_ticks(Some((Auto, 0)), &[Mirror(false), Format("%.2f")], &[])  // Make Y2 not mirror, and visible.
+            // .set_y2_ticks(Some((Auto, 0)), &[Mirror(false), Format("%.2f")], &[])  // Make Y2 not mirror, and visible.
             .set_y_label(y1_name, &[TextColor("black")])
-            .set_y2_label(y2_name, &[TextColor("blue")])
+            // .set_y2_label(y2_name, &[TextColor("blue")])
             .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
             .set_x_time(true);
 
@@ -204,6 +206,55 @@ impl Coronabot {
             }
         }
     }
+
+    fn custom_chart(&self, data: &Vec<DailyStats>, title: String, window: u32, expression: String) -> String {
+        let mut x = Vec::new();
+        let mut y = Vec::new();
+        let mut my_data = data.clone();
+        my_data.reverse();
+        /*
+        // TODO: Do we really want/need the window feature?
+        for i in window..(my_data.len() - 1) {
+
+        }
+       */
+
+        for i in 1..(my_data.len() - 1) {
+            let today = my_data.get(i).unwrap();
+            let yesterday = my_data.get(i-1).unwrap();
+
+            let positives = today.positive.unwrap_or(0) - yesterday.positive.unwrap_or(0);
+            let total = today.total.unwrap_or(0) - yesterday.total.unwrap_or(0);
+
+            // Interpolate variable references provided by user with actual values
+            let mut interp_exp = expression.replace("positive", &format!("{}", positives));
+            interp_exp = interp_exp.replace("total", &format!("{}", total));
+
+            // Try to parse and evaluate the expression
+            let result = mexprp::eval::<f64>(&interp_exp);
+            match result {
+                Ok(res) => {
+                    y.push(res.unwrap_single() as f32);
+                },
+                Err(err) => {
+                    // TODO: Send error message to slack (or return an error to be handled by caller)
+                    println!("Failed to evaluate expression {:}", err);
+                    y.push(0.0);
+                }
+            }
+
+            // X axis (for now, always date)
+            let date = NaiveDate::parse_from_str(&today.date.unwrap().to_string(), "%Y%m%d").unwrap();
+            let t = NaiveTime::from_hms(0, 0, 0);
+            let dt = date.and_time(t);
+            x.push(dt.timestamp());
+
+        }
+        let y2: Vec<f32>  = Vec::new();
+        let url = self.generate_chart(x, y, y2, &title, "", &expression, "");
+        return url;
+    }
+
     fn generate_new_cases_chart(&self,  data: &Vec<DailyStats>, title: String) -> String {
         let mut x = Vec::new();
         let mut y = Vec::new();
@@ -331,9 +382,50 @@ impl Coronabot {
         let query_start = text.find(" ");
         match query_start {
             Some(q_string) => {
+
+                // New UI stuff
+                let spl: Vec<&str> = text.split_whitespace().collect();
+                if spl.len() >= 5 {
+                    let state = spl.get(1).unwrap();
+                    let window = spl.get(3).unwrap();
+                    let exp_start = text.find("y1").unwrap();
+                    let exp = &text[exp_start+3..text.len()];
+                    println!("State: {:?} Window {:?} Exp: {:?}", state, window, exp);
+
+                    let state_stats = self.states_daily.read().unwrap();
+                    match &*state_stats {
+                        Some(data) => {
+                            // TODO: fix &state.to_string()
+                            if !data.contains_key(&state.to_string()) {
+                                let to_send = format!("State data is present but does not contain stats for {state}", state=state);
+                                cli.sender().send_message(&channel, &to_send);
+                                return;
+                            }
+                            // TODO: fix &state.to_string()
+                            let state_data = data.get(&state.to_string()).unwrap();
+                            // let chart_url = self.generate_new_cases_chart(state_data, format!("{state} Coronavirus Cases", state=query));
+                            let parsed_window = window.parse().unwrap();
+                            let chart_url = self.custom_chart(state_data, format!("{state} Custom Chart", state=state),parsed_window, exp.to_string());
+                            let mut to_send = String::new();
+                            to_send.push_str("\n");
+                            to_send.push_str(&chart_url);
+                            cli.sender().send_message(&channel, &to_send);
+                            return;
+                        },
+                        None => {
+                            let to_send = "Sorry, state-level data is missing. Is the API working?";
+                            cli.sender().send_message(&channel, &to_send);
+                            return;
+                        }
+                    }
+
+                    // let url = self.cus
+                }
+                println!("Splt: {:?}", spl);
+
+                //  Old UI stuff
                 let query = &text[q_string+1..text.len()];
                 println!("Got query: {:?}", query);
-
                 if query == "latest" {
                     println!("Getting current data");
                     let current_data = self.us_daily.read().unwrap();
