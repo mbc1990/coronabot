@@ -29,7 +29,7 @@ struct DailyStats {
     date: Option<u32>,
     positive: Option<u32>,
     negative: Option<u32>,
-    pending: Option<i32>,
+    pending: Option<u32>,
     hospitalized: Option<u32>,
     death: Option<u32>,
     total: Option<u32>,
@@ -207,28 +207,69 @@ impl Coronabot {
         }
     }
 
+    // The total count data from the API *should* be monotonically increasing with time but
+    // sometimes it isn't. This is a lousy hack so I don't have to deal with it for a little while
+    fn safe_diff(&self, today: Option<u32>, yesterday: Option<u32>) -> u32 {
+        let td= today.unwrap_or(0) as i32;
+        let yd = yesterday.unwrap_or(0) as i32;
+        let mut diff = 0;
+        if (yd < td)  {
+            diff = td - yd;
+        }
+        return diff as u32;
+    }
+
     fn custom_chart(&self, data: &Vec<DailyStats>, title: String, window: u32, expression: String) -> String {
         let mut x = Vec::new();
         let mut y = Vec::new();
         let mut my_data = data.clone();
+
+        // TODO: Should be separated logically and update when new data is downloaded
         my_data.reverse();
-        /*
-        // TODO: Do we really want/need the window feature?
-        for i in window..(my_data.len() - 1) {
+        let mut desummed_data =  Vec::new();
 
-        }
-       */
-
-        for i in 1..(my_data.len() - 1) {
+        for i in 1..my_data.len() - 1 {
             let today = my_data.get(i).unwrap();
             let yesterday = my_data.get(i-1).unwrap();
 
-            let positives = today.positive.unwrap_or(0) - yesterday.positive.unwrap_or(0);
-            let total = today.total.unwrap_or(0) - yesterday.total.unwrap_or(0);
+            let pos_diff = self.safe_diff(today.positive, yesterday.positive);
+            let neg_diff = self.safe_diff(today.negative, yesterday.negative);
+            let death_diff = self.safe_diff(today.death, yesterday.death);
+            let hosp_diff = self.safe_diff(today.hospitalized, yesterday.hospitalized);
+            let pending_diff = self.safe_diff(today.pending, yesterday.pending);
+            let total_diff = self.safe_diff(today.total, yesterday.total);
+
+            let desummed_daily = DailyStats {
+                state: None,
+                date: today.date,
+                positive: Some(pos_diff),
+                negative: Some(neg_diff),
+                death: Some(death_diff),
+                hospitalized: Some(hosp_diff),
+                pending: Some(pending_diff),
+                total: Some(total_diff)
+            };
+            desummed_data.push(desummed_daily);
+
+
+        }
+
+        for i in 0..(desummed_data.len() - 1) {
+            let today = desummed_data.get(i).unwrap();
+
+            // TODO: Data should be better sanitized before reaching charting logic
+            let positives = today.positive.unwrap_or(0);
+            let total = today.total.unwrap_or(0);
+            let deaths = today.death.unwrap_or(0);
+            let hospitalized = today.hospitalized.unwrap_or(0);
+            let negatives = today.negative.unwrap_or(0);
 
             // Interpolate variable references provided by user with actual values
             let mut interp_exp = expression.replace("positive", &format!("{}", positives));
             interp_exp = interp_exp.replace("total", &format!("{}", total));
+            interp_exp = interp_exp.replace("negative", &format!("{}", negatives));
+            interp_exp = interp_exp.replace("hospitalized", &format!("{}", hospitalized));
+            interp_exp = interp_exp.replace("dead", &format!("{}", deaths));
 
             // Try to parse and evaluate the expression
             let result = mexprp::eval::<f64>(&interp_exp);
