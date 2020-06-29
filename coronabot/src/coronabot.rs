@@ -274,13 +274,15 @@ impl Coronabot {
             let result = mexprp::eval::<f64>(&interp_exp);
             match result {
                 Ok(res) => {
-                    y.push(res.unwrap_single() as f32);
+                    let results = res.to_vec();
+                    y.push(*results.get(0).unwrap() as f32);
                 },
                 Err(err) => {
                     // TODO: Send error message to slack (or return an error to be handled by caller)
                     // TODO: check error logs first, might happen a lot with noisy data (divide by 0 especially)
                     println!("Failed to evaluate expression {:}", err);
                     y.push(0.0);
+
                 }
             }
 
