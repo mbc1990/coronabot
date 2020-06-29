@@ -426,10 +426,31 @@ impl Coronabot {
 
                 // New UI stuff
                 let spl: Vec<&str> = text.split_whitespace().collect();
+
+                if spl.len() > 1 && *spl.get(1).unwrap() == "help" {
+                    let to_send = "Usage:\n \
+                    Overall new positive cases: @coronabot latest\
+                    \nState new positive cases: @coronabot <state abbreviation>\
+                    \nCustom chart (beta): @coronabot custom <state abbreviation> y1 <expression>\
+                    \nCustom charts are aware of these variables: positive, negative, total, dead, hospitalized, pending. If you reference them in the expression, they will be interpolated into the expression. For example (positive/total) for infection rate.";
+                    cli.sender().send_message(&channel, &to_send);
+                    return;
+                }
+
                 if spl.len() > 3 && *spl.get(1).unwrap() == "custom" {
                     let state = spl.get(2).unwrap();
-                    let exp_start = text.find("y1").unwrap();
-                    let exp = &text[exp_start+3..text.len()];
+                    let exp_start = text.find("y1");
+
+                    match exp_start {
+                        Some(_) => {},
+                        None => {
+                            let to_send = "Missing y-axis specifier. Usage: @coronabot custom <state> y1 <expression>";
+                            cli.sender().send_message(&channel, &to_send);
+                            return;
+                        }
+                    }
+
+                    let exp = &text[exp_start.unwrap()+3..text.len()];
                     println!("State: {:?} Exp: {:?}", state, exp);
 
                     let state_stats = self.states_daily.read().unwrap();
