@@ -219,7 +219,8 @@ impl Coronabot {
         return diff as u32;
     }
 
-    fn custom_chart(&self, data: &Vec<DailyStats>, title: String, window: u32, expression: String) -> String {
+    // TODO: Should return a Result<String, Err> so we can pass up an error from the expression parser
+    fn custom_chart(&self, data: &Vec<DailyStats>, title: String, expression: String) -> String {
         let mut x = Vec::new();
         let mut y = Vec::new();
         let mut my_data = data.clone();
@@ -250,8 +251,6 @@ impl Coronabot {
                 total: Some(total_diff)
             };
             desummed_data.push(desummed_daily);
-
-
         }
 
         for i in 0..(desummed_data.len() - 1) {
@@ -279,6 +278,7 @@ impl Coronabot {
                 },
                 Err(err) => {
                     // TODO: Send error message to slack (or return an error to be handled by caller)
+                    // TODO: check error logs first, might happen a lot with noisy data (divide by 0 especially)
                     println!("Failed to evaluate expression {:}", err);
                     y.push(0.0);
                 }
@@ -426,12 +426,11 @@ impl Coronabot {
 
                 // New UI stuff
                 let spl: Vec<&str> = text.split_whitespace().collect();
-                if spl.len() >= 5 {
-                    let state = spl.get(1).unwrap();
-                    let window = spl.get(3).unwrap();
+                if spl.len() > 3 && *spl.get(1).unwrap() == "custom" {
+                    let state = spl.get(2).unwrap();
                     let exp_start = text.find("y1").unwrap();
                     let exp = &text[exp_start+3..text.len()];
-                    println!("State: {:?} Window {:?} Exp: {:?}", state, window, exp);
+                    println!("State: {:?} Exp: {:?}", state, exp);
 
                     let state_stats = self.states_daily.read().unwrap();
                     match &*state_stats {
@@ -444,9 +443,7 @@ impl Coronabot {
                             }
                             // TODO: fix &state.to_string()
                             let state_data = data.get(&state.to_string()).unwrap();
-                            // let chart_url = self.generate_new_cases_chart(state_data, format!("{state} Coronavirus Cases", state=query));
-                            let parsed_window = window.parse().unwrap();
-                            let chart_url = self.custom_chart(state_data, format!("{state} Custom Chart", state=state),parsed_window, exp.to_string());
+                            let chart_url = self.custom_chart(state_data, format!("{state} Custom Chart", state=state),exp.to_string());
                             let mut to_send = String::new();
                             to_send.push_str("\n");
                             to_send.push_str(&chart_url);
@@ -459,8 +456,6 @@ impl Coronabot {
                             return;
                         }
                     }
-
-                    // let url = self.cus
                 }
                 println!("Splt: {:?}", spl);
 
