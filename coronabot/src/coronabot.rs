@@ -228,7 +228,6 @@ impl Coronabot {
         // TODO: Should be separated logically and update when new data is downloaded
         my_data.reverse();
         let mut desummed_data =  Vec::new();
-
         for i in 1..my_data.len() - 1 {
             let today = my_data.get(i).unwrap();
             let yesterday = my_data.get(i-1).unwrap();
@@ -253,33 +252,31 @@ impl Coronabot {
             desummed_data.push(desummed_daily);
         }
 
-        for i in 0..(desummed_data.len() - 1) {
-            let today = desummed_data.get(i).unwrap();
-
-            // TODO: Data should be better sanitized before reaching charting logic
+        for today in desummed_data.iter() {
             let positives = today.positive.unwrap_or(0);
             let total = today.total.unwrap_or(0);
             let deaths = today.death.unwrap_or(0);
             let hospitalized = today.hospitalized.unwrap_or(0);
             let negatives = today.negative.unwrap_or(0);
 
-            // Interpolate variable references provided by user with actual values
-            let mut interp_exp = expression.replace("positive", &format!("{}", positives));
-            interp_exp = interp_exp.replace("total", &format!("{}", total));
-            interp_exp = interp_exp.replace("negative", &format!("{}", negatives));
-            interp_exp = interp_exp.replace("hospitalized", &format!("{}", hospitalized));
-            interp_exp = interp_exp.replace("dead", &format!("{}", deaths));
+            let mut context: mexprp::Context<f64> = mexprp::Context::new();
+            context.set_var("positive", positives as f64);
+            context.set_var("total", total as f64);
+            context.set_var("negative", negatives as f64);
+            context.set_var("hospitalized", hospitalized as f64);
+            context.set_var("dead", deaths as f64);
+
+            let expr = mexprp::Expression::parse_ctx(&expression, context).unwrap();
+            let result = expr.eval();
 
             // Try to parse and evaluate the expression
-            let result = mexprp::eval::<f64>(&interp_exp);
             match result {
                 Ok(res) => {
                     let results = res.to_vec();
                     y.push(*results.get(0).unwrap() as f32);
                 },
                 Err(err) => {
-                    // TODO: Send error message to slack (or return an error to be handled by caller)
-                    // TODO: check error logs first, might happen a lot with noisy data (divide by 0 especially)
+                    // TODO: This error is noisy but the graphs look okay
                     println!("Failed to evaluate expression {:}", err);
                     y.push(0.0);
 
