@@ -460,7 +460,6 @@ impl Coronabot {
         match query_start {
             Some(q_string) => {
 
-                // New UI stuff
                 let spl: Vec<&str> = text.split_whitespace().collect();
 
                 if spl.len() > 1 && *spl.get(1).unwrap() == "help" {
@@ -474,7 +473,7 @@ impl Coronabot {
                 }
 
                 if spl.len() > 3 && *spl.get(1).unwrap() == "custom" {
-                    let state = spl.get(2).unwrap();
+                    let state = *spl.get(2).unwrap();
                     let exp_start = text.find("y1");
 
                     match exp_start {
@@ -492,14 +491,12 @@ impl Coronabot {
                     let state_stats = self.states_daily.read().unwrap();
                     match &*state_stats {
                         Some(data) => {
-                            // TODO: fix &state.to_string()
-                            if !data.contains_key(&state.to_string()) {
+                            if !data.contains_key(state) {
                                 let to_send = format!("State data is present but does not contain stats for {state}", state=state);
                                 cli.sender().send_message(&channel, &to_send);
                                 return;
                             }
-                            // TODO: fix &state.to_string()
-                            let state_data = data.get(&state.to_string()).unwrap();
+                            let state_data = data.get(state).unwrap();
                             let chart_url = self.custom_chart(state_data, format!("{state} Custom Chart", state=state),exp.to_string());
                             let mut to_send = String::new();
                             to_send.push_str("\n");
@@ -516,7 +513,6 @@ impl Coronabot {
                 }
                 println!("Splt: {:?}", spl);
 
-                //  Old UI stuff
                 let query = &text[q_string+1..text.len()];
                 println!("Got query: {:?}", query);
                 if query == "latest" {
