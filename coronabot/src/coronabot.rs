@@ -525,8 +525,7 @@ impl Coronabot {
                     match &*current_data {
                         Some(data) => {
                             println!("Getting data");
-                            // let to_send = self.format_latest(data);
-                            let mut to_send = self.format_daily(data, "U.S.");
+                            let mut to_send = "".to_string();
                             let chart_url = self.generate_new_cases_chart(data, "U.S. Coronavirus Cases".to_string());
                             to_send.push_str("\n");
                             to_send.push_str(&chart_url);
@@ -538,9 +537,6 @@ impl Coronabot {
                             cli.sender().send_message(&channel, &to_send);
                         }
                     }
-                } else if query == "help" {
-                    let to_send = "Usage: @Coronabot <help|latest|<2 letter state abbreviation>|top>";
-                    cli.sender().send_message(&channel, &to_send);
                 } else if query == "top" {
                     let state_stats = self.states_daily.read().unwrap();
                     match &*state_stats {
@@ -564,7 +560,7 @@ impl Coronabot {
                             }
                             let state_data = data.get(query).unwrap();
                             let chart_url = self.generate_new_cases_chart(state_data, format!("{state} Coronavirus Cases", state=query));
-                            let mut to_send = self.format_daily(state_data, &query);
+                            let mut to_send = "".to_string();
                             to_send.push_str("\n");
                             to_send.push_str(&chart_url);
                             cli.sender().send_message(&channel, &to_send);
