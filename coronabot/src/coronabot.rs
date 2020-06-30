@@ -21,6 +21,7 @@ use std::io::Read;
 use gnuplot::PlotOption::{Axes, LineStyle, PointSize};
 use gnuplot::XAxis::X1;
 use gnuplot::YAxis::{Y1, Y2};
+use mexprp::{Term, Context, Calculation, MathError, Answer};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -265,6 +266,42 @@ impl Coronabot {
             context.set_var("negative", negatives as f64);
             context.set_var("hospitalized", hospitalized as f64);
             context.set_var("dead", deaths as f64);
+
+            // TODO: Some refactoring
+            context.set_func("log", |args: &[Term<f64>], ctx: &Context<f64>| -> Calculation<f64> {
+                if args.len() != 1 {
+                    return Err(MathError::IncorrectArguments)
+                }
+                let a = args.get(0).unwrap().eval_ctx(ctx)?;
+                let answer = match a {
+                    Answer::Single(n) => n.log2(),
+                    Answer::Multiple(ns) => ns.get(0).unwrap().log2()
+                };
+                Ok(Answer::Single(answer))
+            });
+            context.set_func("logtwo", |args: &[Term<f64>], ctx: &Context<f64>| -> Calculation<f64> {
+                if args.len() != 1 {
+                    return Err(MathError::IncorrectArguments)
+                }
+                let a = args.get(0).unwrap().eval_ctx(ctx)?;
+                let answer = match a {
+                    Answer::Single(n) => n.log2(),
+                    Answer::Multiple(ns) => ns.get(0).unwrap().log2()
+                };
+                Ok(Answer::Single(answer))
+            });
+            context.set_func("logten", |args: &[Term<f64>], ctx: &Context<f64>| -> Calculation<f64> {
+                if args.len() != 1 {
+                    return Err(MathError::IncorrectArguments)
+                }
+                let a = args.get(0).unwrap().eval_ctx(ctx)?;
+                let answer = match a {
+                    Answer::Single(n) => n.log10(),
+                    Answer::Multiple(ns) => ns.get(0).unwrap().log2()
+                };
+                Ok(Answer::Single(answer))
+            });
+
 
             let expr = mexprp::Expression::parse_ctx(&expression, context).unwrap();
             let result = expr.eval();
