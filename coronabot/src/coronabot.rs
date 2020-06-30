@@ -21,6 +21,7 @@ use std::io::Read;
 use gnuplot::PlotOption::{Axes, LineStyle, PointSize};
 use gnuplot::XAxis::X1;
 use gnuplot::YAxis::{Y1, Y2};
+use mexprp::{Term, Context, Calculation, MathError, Answer};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -29,7 +30,7 @@ struct DailyStats {
     date: Option<u32>,
     positive: Option<u32>,
     negative: Option<u32>,
-    pending: Option<i32>,
+    pending: Option<u32>,
     hospitalized: Option<u32>,
     death: Option<u32>,
     total: Option<u32>,
@@ -39,6 +40,8 @@ pub struct Coronabot {
     bot_id: String,
     us_daily: Arc<RwLock<Option<Vec<DailyStats>>>>,
     states_daily: Arc<RwLock<Option<HashMap<String, Vec<DailyStats>>>>>
+
+    // TODO: Should have a list of data sources that can be accessed
 }
 
 fn construct_states_map(data: &Vec<DailyStats>) -> HashMap<String, Vec<DailyStats>> {
@@ -144,69 +147,33 @@ impl Coronabot {
 
     }
 
-
-    // New cases, 5 day trailing average
-    fn generate_new_cases_chart(&self,  data: &Vec<DailyStats>, title: String) -> String {
-        let mut x = Vec::new();
-        let mut y = Vec::new();
-        let mut y2 = Vec::new();
-        let mut my_data = data.clone();
-        my_data.reverse();
-        for i in 6..(my_data.len() - 1) {
-
-            let mut total_diff = 0;
-            for k in i-5..i {
-                let today = my_data.get(k).unwrap();
-                let yesterday = my_data.get(k-1).unwrap();
-
-                // N.B. This handles bad Florida data that appears to show number of positive cases decreasing (which is impossible)
-                let mut diff = 0;
-                if (yesterday.positive.unwrap() <= today.positive.unwrap()) {
-                    diff = today.positive.unwrap() - yesterday.positive.unwrap();
-                }
-                total_diff += diff;
-
-            }
-            let avg_diff = total_diff as f32 / 5.0;
-
-
-            y.push(avg_diff);
-
-            // TODO: Macro for this noisy code?
-            let total_pos = (my_data.get(i).unwrap().positive.unwrap_or(0) as f32) - (my_data.get(i-5).unwrap().positive.unwrap_or(0) as f32);
-            let total_tested = (my_data.get(i).unwrap().total.unwrap_or(0) as f32) - (my_data.get(i-5).unwrap().total.unwrap_or(0) as f32);
-
-            let mut infection_rate = (total_pos / total_tested) * 100.0;
-
-            // Clean up some noisy data observed in NY
-            // Not ideal but hopefully helps a little
-            if infection_rate < 0.0 || infection_rate > 50.0 {
-               infection_rate = 0.0;
-            }
-            y2.push(infection_rate);
-            let daily = my_data.get(i).unwrap();
-            let date = NaiveDate::parse_from_str(&daily.date.unwrap().to_string(), "%Y%m%d").unwrap();
-            let t = NaiveTime::from_hms(0, 0, 0);
-            let dt = date.and_time(t);
-            x.push(dt.timestamp());
-        }
+    fn generate_chart(&self,
+                      x: Vec<i64>,
+                      y1: Vec<f32>,
+                      y2: Vec<f32>,
+                      title: &str,
+                      x1_name: &str,
+                      y1_name: &str,
+                      y2_name: &str) -> String {
         let mut fg = Figure::new();
         fg.axes2d()
             .set_title(&title, &[])
             .lines_points(
                 &x,
-                &y,
+                &y1,
                 &[Axes(X1, Y1), Color("black"), PointSize(0.0)],
             )
+            /*
             .lines_points(
                 &x,
                 &y2,
                 &[Axes(X1, Y2), Color("blue"), PointSize(0.0)],
             )
+            */
             .set_y_ticks(Some((Auto, 0)), &[Mirror(false)], &[])  // Make Y1 not mirror.
-            .set_y2_ticks(Some((Auto, 0)), &[Mirror(false), Format("%.2f")], &[])  // Make Y2 not mirror, and visible.
-            .set_y_label("Positives", &[TextColor("black")])
-            .set_y2_label("% Positive (trailing 5 days)", &[TextColor("blue")])
+            // .set_y2_ticks(Some((Auto, 0)), &[Mirror(false), Format("%.2f")], &[])  // Make Y2 not mirror, and visible.
+            .set_y_label(y1_name, &[TextColor("black")])
+            // .set_y2_label(y2_name, &[TextColor("blue")])
             .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
             .set_x_time(true);
 
@@ -241,55 +208,175 @@ impl Coronabot {
         }
     }
 
-    // Positive cases by day
-    fn generate_pos_cases_chart(&self, data: &Vec<DailyStats>, title: String) -> String {
+    // The total count data from the API *should* be monotonically increasing with time but
+    // sometimes it isn't. This is a lousy hack so I don't have to deal with it for a little while
+    fn safe_diff(&self, today: Option<u32>, yesterday: Option<u32>) -> u32 {
+        let td= today.unwrap_or(0) as i32;
+        let yd = yesterday.unwrap_or(0) as i32;
+        let mut diff = 0;
+        if (yd < td)  {
+            diff = td - yd;
+        }
+        return diff as u32;
+    }
+
+    // TODO: Should return a Result<String, Err> so we can pass up an error from the expression parser
+    fn custom_chart(&self, data: &Vec<DailyStats>, title: String, expression: String) -> String {
         let mut x = Vec::new();
         let mut y = Vec::new();
         let mut my_data = data.clone();
-        my_data.reverse();
-        for daily in my_data.iter() {
-            let num_pos = daily.positive.unwrap_or(0);
-            y.push(num_pos);
 
+        // TODO: Should be separated logically and update when new data is downloaded
+        my_data.reverse();
+        let mut desummed_data =  Vec::new();
+        for i in 1..my_data.len() - 1 {
+            let today = my_data.get(i).unwrap();
+            let yesterday = my_data.get(i-1).unwrap();
+
+            let pos_diff = self.safe_diff(today.positive, yesterday.positive);
+            let neg_diff = self.safe_diff(today.negative, yesterday.negative);
+            let death_diff = self.safe_diff(today.death, yesterday.death);
+            let hosp_diff = self.safe_diff(today.hospitalized, yesterday.hospitalized);
+            let pending_diff = self.safe_diff(today.pending, yesterday.pending);
+            let total_diff = self.safe_diff(today.total, yesterday.total);
+
+            let desummed_daily = DailyStats {
+                state: None,
+                date: today.date,
+                positive: Some(pos_diff),
+                negative: Some(neg_diff),
+                death: Some(death_diff),
+                hospitalized: Some(hosp_diff),
+                pending: Some(pending_diff),
+                total: Some(total_diff)
+            };
+            desummed_data.push(desummed_daily);
+        }
+
+        for today in desummed_data.iter() {
+            let positives = today.positive.unwrap_or(0);
+            let total = today.total.unwrap_or(0);
+            let deaths = today.death.unwrap_or(0);
+            let hospitalized = today.hospitalized.unwrap_or(0);
+            let negatives = today.negative.unwrap_or(0);
+
+            let mut context: mexprp::Context<f64> = mexprp::Context::new();
+            context.set_var("positive", positives as f64);
+            context.set_var("total", total as f64);
+            context.set_var("negative", negatives as f64);
+            context.set_var("hospitalized", hospitalized as f64);
+            context.set_var("dead", deaths as f64);
+
+            // TODO: Some refactoring
+            context.set_func("log", |args: &[Term<f64>], ctx: &Context<f64>| -> Calculation<f64> {
+                if args.len() != 1 {
+                    return Err(MathError::IncorrectArguments)
+                }
+                let a = args.get(0).unwrap().eval_ctx(ctx)?;
+                let answer = match a {
+                    Answer::Single(n) => n.log2(),
+                    Answer::Multiple(ns) => ns.get(0).unwrap().log2()
+                };
+                Ok(Answer::Single(answer))
+            });
+            context.set_func("logtwo", |args: &[Term<f64>], ctx: &Context<f64>| -> Calculation<f64> {
+                if args.len() != 1 {
+                    return Err(MathError::IncorrectArguments)
+                }
+                let a = args.get(0).unwrap().eval_ctx(ctx)?;
+                let answer = match a {
+                    Answer::Single(n) => n.log2(),
+                    Answer::Multiple(ns) => ns.get(0).unwrap().log2()
+                };
+                Ok(Answer::Single(answer))
+            });
+            context.set_func("logten", |args: &[Term<f64>], ctx: &Context<f64>| -> Calculation<f64> {
+                if args.len() != 1 {
+                    return Err(MathError::IncorrectArguments)
+                }
+                let a = args.get(0).unwrap().eval_ctx(ctx)?;
+                let answer = match a {
+                    Answer::Single(n) => n.log10(),
+                    Answer::Multiple(ns) => ns.get(0).unwrap().log2()
+                };
+                Ok(Answer::Single(answer))
+            });
+
+
+            let expr = mexprp::Expression::parse_ctx(&expression, context).unwrap();
+            let result = expr.eval();
+
+            // Try to parse and evaluate the expression
+            match result {
+                Ok(res) => {
+                    let results = res.to_vec();
+                    y.push(*results.get(0).unwrap() as f32);
+                },
+                Err(err) => {
+                    // TODO: This error is noisy but the graphs look okay
+                    println!("Failed to evaluate expression {:}", err);
+                    y.push(0.0);
+
+                }
+            }
+
+            // X axis (for now, always date)
+            let date = NaiveDate::parse_from_str(&today.date.unwrap().to_string(), "%Y%m%d").unwrap();
+            let t = NaiveTime::from_hms(0, 0, 0);
+            let dt = date.and_time(t);
+            x.push(dt.timestamp());
+
+        }
+        let y2: Vec<f32>  = Vec::new();
+        let url = self.generate_chart(x, y, y2, &title, "", &expression, "");
+        return url;
+    }
+
+    fn generate_new_cases_chart(&self,  data: &Vec<DailyStats>, title: String) -> String {
+        let mut x = Vec::new();
+        let mut y = Vec::new();
+        let mut y2 = Vec::new();
+        let mut my_data = data.clone();
+        my_data.reverse();
+        for i in 6..(my_data.len() - 1) {
+
+            let mut total_diff = 0;
+            for k in i-5..i {
+                let today = my_data.get(k).unwrap();
+                let yesterday = my_data.get(k-1).unwrap();
+
+                // N.B. This handles bad Florida data that appears to show number of positive cases decreasing (which is impossible)
+                let mut diff = 0;
+                if (yesterday.positive.unwrap() <= today.positive.unwrap()) {
+                    diff = today.positive.unwrap() - yesterday.positive.unwrap();
+                }
+                total_diff += diff;
+            }
+            let avg_diff = total_diff as f32 / 5.0;
+
+
+            y.push(avg_diff);
+
+            // TODO: Macro for this noisy code?
+            let total_pos = (my_data.get(i).unwrap().positive.unwrap_or(0) as f32) - (my_data.get(i-5).unwrap().positive.unwrap_or(0) as f32);
+            let total_tested = (my_data.get(i).unwrap().total.unwrap_or(0) as f32) - (my_data.get(i-5).unwrap().total.unwrap_or(0) as f32);
+
+            let mut infection_rate = (total_pos / total_tested) * 100.0;
+
+            // Clean up some noisy data observed in NY
+            // Not ideal but hopefully helps a little
+            if infection_rate < 0.0 || infection_rate > 50.0 {
+                infection_rate = 0.0;
+            }
+            y2.push(infection_rate);
+            let daily = my_data.get(i).unwrap();
             let date = NaiveDate::parse_from_str(&daily.date.unwrap().to_string(), "%Y%m%d").unwrap();
             let t = NaiveTime::from_hms(0, 0, 0);
             let dt = date.and_time(t);
             x.push(dt.timestamp());
         }
-        let mut fg = Figure::new();
-        fg.axes2d()
-            .set_title(&title, &[])
-            .lines(&x, &y, &[Caption("Positive tests"), Color("black")])
-            .set_x_ticks(Some((Auto, 1)), &[Mirror(false), Format("%m/%d")], &[Font("Helvetica", 12.0)])
-            .set_x_time(true);
-        println!("Saving to disk...");
-        let mut fpath = "/tmp/".to_string();
-        let uuid = Uuid::new_v4().to_string();
-        fpath.push_str(&uuid);
-        fpath.push_str(".png");
-        let mut s3_path = "coronavirus/".to_string();
-        s3_path.push_str(&uuid);
-        s3_path.push_str(".png");
-        let res = fg.save_to_png(&fpath.to_string(), 800, 400);
-        match res {
-            Ok(()) => {
-                println!("Saved {:}", fpath);
-                let credentials = Credentials::default();
-                let region = s3::region::Region::UsEast1;
-                let bucket = Bucket::new("image-paster", region, credentials).unwrap();
-                let mut f = File::open(&fpath).unwrap();
-                let mut buffer = Vec::new();
-                f.read_to_end(&mut buffer).unwrap();
-                bucket.put_object_blocking(&s3_path, &buffer, "multipart/form-data");
-                let mut public_url = "https://image-paster.s3.amazonaws.com/".to_string();
-                public_url.push_str(&s3_path);
-                println!("Stored in s3: {:}", &public_url);
-                return public_url;
-            },
-            Err(err) => {
-                return format!("Sorry, there was an error generating your plot:\n {:?}", err);
-            }
-        }
+        let url = self.generate_chart(x, y, y2, &title, "", "Positives", "% Positive (trailing 5 days)");
+        return url;
     }
 
     fn format_daily(&self, data: &Vec<DailyStats>, geo_title: &str) -> String {
@@ -372,9 +459,62 @@ impl Coronabot {
         let query_start = text.find(" ");
         match query_start {
             Some(q_string) => {
+
+                let spl: Vec<&str> = text.split_whitespace().collect();
+
+                if spl.len() > 1 && *spl.get(1).unwrap() == "help" {
+                    let to_send = "Usage:\n \
+                    Overall new positive cases: @coronabot latest\
+                    \nState new positive cases: @coronabot <state abbreviation>\
+                    \nCustom chart (beta): @coronabot custom <state abbreviation> y1 <expression>\
+                    \nCustom charts are aware of these variables: positive, negative, total, dead, hospitalized, pending. If you reference them in the expression, they will be interpolated into the expression. For example (positive/total) for infection rate.";
+                    cli.sender().send_message(&channel, &to_send);
+                    return;
+                }
+
+                if spl.len() > 3 && *spl.get(1).unwrap() == "custom" {
+                    let state = *spl.get(2).unwrap();
+                    let exp_start = text.find("y1");
+
+                    match exp_start {
+                        Some(_) => {},
+                        None => {
+                            let to_send = "Missing y-axis specifier. Usage: @coronabot custom <state> y1 <expression>";
+                            cli.sender().send_message(&channel, &to_send);
+                            return;
+                        }
+                    }
+
+                    let exp = &text[exp_start.unwrap()+3..text.len()];
+                    println!("State: {:?} Exp: {:?}", state, exp);
+
+                    let state_stats = self.states_daily.read().unwrap();
+                    match &*state_stats {
+                        Some(data) => {
+                            if !data.contains_key(state) {
+                                let to_send = format!("State data is present but does not contain stats for {state}", state=state);
+                                cli.sender().send_message(&channel, &to_send);
+                                return;
+                            }
+                            let state_data = data.get(state).unwrap();
+                            let chart_url = self.custom_chart(state_data, format!("{state} Custom Chart", state=state),exp.to_string());
+                            let mut to_send = String::new();
+                            to_send.push_str("\n");
+                            to_send.push_str(&chart_url);
+                            cli.sender().send_message(&channel, &to_send);
+                            return;
+                        },
+                        None => {
+                            let to_send = "Sorry, state-level data is missing. Is the API working?";
+                            cli.sender().send_message(&channel, &to_send);
+                            return;
+                        }
+                    }
+                }
+                println!("Splt: {:?}", spl);
+
                 let query = &text[q_string+1..text.len()];
                 println!("Got query: {:?}", query);
-
                 if query == "latest" {
                     println!("Getting current data");
                     let current_data = self.us_daily.read().unwrap();
